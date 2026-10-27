@@ -16,6 +16,7 @@ import * as gg from './providers/google.js';
 import { ytVideosToTracks } from './providers/youtube.js';
 import { youtubeCollection } from './importer.js';
 import { scResolve } from './providers/soundcloud.js';
+import { askText } from './ui.js';
 
 const dedupe = list => { const s = new Set(); return list.filter(t => t && !s.has(t.key) && s.add(t.key)); };
 // Liked videos include everything; keep music (category 10) when there is any.
@@ -129,7 +130,7 @@ export const ACCOUNTS = {
     configured: () => true,
     linked: () => !!settings.scProfile,
     connect: async () => {
-      const input = prompt('Your SoundCloud profile link or username', 'https://soundcloud.com/');
+      const input = await askText('Link your SoundCloud profile', { placeholder: 'https://soundcloud.com/yourname', message: 'Paste your profile link or username. Your likes and uploads need to be public.', okLabel: 'Link' });
       if (!input) return;
       const url = scNormalize(input.trim());
       if (!url) throw new Error('That isn’t a SoundCloud profile link');

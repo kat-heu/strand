@@ -345,3 +345,11 @@ select.input { appearance: none; background-image: linear-gradient(45deg, transp
 .dev-block[open] { display: grid; gap: 12px; }
 .dev-block ol { margin-top: 4px; }
 .acct-grid.compact .btn:not(.primary) { background: var(--bg-2); border: 1px solid var(--line); }
+
+/* in-app dialogs (Electron has no window.prompt) */
+.dialog-overlay { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; padding: 16px; background: rgba(5,5,10,.6); backdrop-filter: blur(6px); animation: fade .15s ease; }
+.dialog { width: min(440px, 100%); display: grid; gap: 14px; padding: 22px; border-radius: 16px; background: #1b1a24; border: 1px solid var(--line); box-shadow: 0 30px 80px rgba(0,0,0,.6); }
+.dialog h3 { font-size: 19px; }
+.dialog p { margin: -6px 0 0; font-size: 13.5px; }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.btn.primary.danger { background: #ff4d5e; color: #fff; }

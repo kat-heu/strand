@@ -68,8 +68,14 @@ const MOCK_GIS = `window.google={accounts:{oauth2:{initTokenClient(c){ window.__
   const errs = [];
   p.on('pageerror', e => errs.push('PAGEERR ' + e.message));
   p.on('console', m => { if (m.type() === 'error' && !/ERR_FAILED|status of 4/.test(m.text())) errs.push('CONSOLE ' + m.text()); });
-  let dialogAnswer = null;
-  p.on('dialog', d => d.accept(dialogAnswer ?? undefined));
+  // Browser-native dialogs must never appear (Electron can't show prompt()).
+  p.on('dialog', d => { errs.push('NATIVE DIALOG ' + d.type() + ': ' + d.message()); d.dismiss(); });
+  // Answer the app's own in-app dialog.
+  const answer = async (text) => {
+    await p.locator('.dialog').waitFor();
+    if (text !== undefined) await p.fill('.dialog input', text);
+    await p.locator('.dialog .btn.primary').click(); await sleep(300);
+  };
 
   const J = (r, d, status = 200) => r.fulfill({ status, json: d, headers: { 'Access-Control-Allow-Origin': '*' } });
   const art = i => `https://img.test/a${i % 4}/100x100bb.jpg`;
@@ -180,17 +186,17 @@ const MOCK_GIS = `window.google={accounts:{oauth2:{initTokenClient(c){ window.__
   check('Search shows top result + songs', await p.locator('.top-card').count() === 1 && await p.locator('.row').count() >= 5);
   await p.locator('.row').first().click({ button: 'right' }); await sleep(200);
   await p.getByRole('button', { name: 'Add to playlist…' }).click(); await sleep(200);
-  dialogAnswer = 'Test list';
-  await p.getByRole('button', { name: 'New playlist' }).click(); await sleep(300);
+  await p.getByRole('button', { name: 'New playlist' }).click();
+  await answer('Test list');
   const pls = await p.evaluate(() => strand.library.playlists.map(x => [x.name, x.tracks.length]));
   check('Create playlist from track menu', pls.length === 1 && pls[0][0] === 'Test list' && pls[0][1] === 1, JSON.stringify(pls));
   check('Sidebar shows new playlist', await p.locator('#side-playlists a', { hasText: 'Test list' }).count() === 1);
   await p.locator('#side-playlists a', { hasText: 'Test list' }).click(); await sleep(500);
-  dialogAnswer = 'Renamed';
-  await p.getByRole('button', { name: 'Rename' }).click(); await sleep(400);
+  await p.getByRole('button', { name: 'Rename' }).click();
+  await answer('Renamed');
   check('Rename playlist', await p.evaluate(() => strand.library.playlists[0].name) === 'Renamed');
-  dialogAnswer = null;
-  await p.getByRole('button', { name: 'Delete' }).click(); await sleep(400);
+  await p.getByRole('button', { name: 'Delete' }).click();
+  await answer();
   check('Delete playlist', await p.evaluate(() => strand.library.playlists.length) === 0 && p.url().endsWith('#/library'));
 
   // artist + album pages
@@ -284,9 +290,8 @@ const MOCK_GIS = `window.google={accounts:{oauth2:{initTokenClient(c){ window.__
 
   // ---------- 5. SoundCloud profile link
   await go('#/me', 800);
-  dialogAnswer = 'https://soundcloud.com/djkati/sets/whatever';
-  await p.locator('.acct', { hasText: 'SoundCloud' }).getByRole('button', { name: 'Connect' }).click(); await sleep(800);
-  dialogAnswer = null;
+  await p.locator('.acct', { hasText: 'SoundCloud' }).getByRole('button', { name: 'Connect' }).click();
+  await answer('https://soundcloud.com/djkati/sets/whatever'); await sleep(500);
   check('SoundCloud profile linked (normalized)', await p.evaluate(() => strand.settings.scProfile) === 'https://soundcloud.com/djkati');
   await go('#/me/soundcloud', 3500);
   check('SoundCloud likes + uploads load', await p.locator('.me-sec', { hasText: 'Likes' }).locator('.row').count() === 3 && await p.locator('.me-sec', { hasText: 'Your uploads' }).locator('.row').count() === 3);
@@ -294,7 +299,8 @@ const MOCK_GIS = `window.google={accounts:{oauth2:{initTokenClient(c){ window.__
   // ---------- 6. Disconnect + settings
   await go('#/settings', 800);
   check('Settings shows linked accounts + developer keys', await p.locator('.acct.linked').count() === 3 && await p.locator('details.dev-block').count() === 4);
-  await p.locator('.acct', { hasText: 'Spotify' }).getByRole('button', { name: 'Disconnect' }).click(); await sleep(600);
+  await p.locator('.acct', { hasText: 'Spotify' }).getByRole('button', { name: 'Disconnect' }).click();
+  await answer(); await sleep(400);
   check('Disconnect Spotify', await p.evaluate(() => !localStorage.getItem('strand:spotify')) && await p.locator('.acct.linked').count() === 2);
 
   // ---------- 7. Mobile: tap a row to play

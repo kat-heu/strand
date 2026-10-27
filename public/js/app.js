@@ -1,4 +1,5 @@
 import { h, fmt, debounce, b64urlEncode, b64urlDecode } from './util.js';
+import { askText, askConfirm, showText } from './ui.js';
 import { I, SERVICES } from './icons.js';
 import { settings, setSetting, fromConfig, library, saveLibrary, isLiked, toggleLike, on, emit, clearCaches } from './store.js';
 import * as catalog from './catalog.js';
@@ -60,7 +61,7 @@ function shareUrl(t) {
 }
 async function copy(text, msg = 'Link copied') {
   try { await navigator.clipboard.writeText(text); toast(msg); }
-  catch { prompt('Copy this link', text); }
+  catch { showText('Copy this link', text, 'Select the link and copy it.'); }
 }
 
 function trackMenu(anchor, t) {
@@ -83,8 +84,8 @@ function playlistPicker(anchor, t) {
     pl.tracks.push(t); saveLibrary(); toast('Added to ' + pl.name);
   };
   showMenu(anchor, [
-    { label: 'New playlist', icon: I.plus, onClick: () => {
-      const name = prompt('Playlist name', 'My playlist'); if (!name) return;
+    { label: 'New playlist', icon: I.plus, onClick: async () => {
+      const name = await askText('New playlist', { value: 'My playlist', okLabel: 'Create' }); if (!name) return;
       const pl = newPlaylist(name, []); add(pl);
     } },
     ...(library.playlists.length ? ['-', { group: library.playlists.map(pl => ({ label: pl.name, onClick: () => add(pl) })) }] : []),
@@ -330,8 +331,8 @@ function playlistView(v, pl, { liked = false } = {}) {
       h('div', { class: 'row-actions', style: { marginTop: '6px' } },
         h('button', { class: 'btn primary', disabled: !pl.tracks.length, onClick: () => P.playQueue(pl.tracks, 0) }, h('span', { html: I.play }), 'Play'),
         h('button', { class: 'btn', disabled: !pl.tracks.length, onClick: () => { P.state.shuffle = true; emit('state'); P.playQueue(pl.tracks, Math.floor(Math.random() * pl.tracks.length)); } }, h('span', { html: I.shuffle }), 'Shuffle'),
-        !liked ? h('button', { class: 'btn ghost', onClick: () => { const n = prompt('Rename playlist', pl.name); if (n) { pl.name = n; saveLibrary(); route(); } } }, 'Rename') : null,
-        !liked ? h('button', { class: 'btn ghost', onClick: () => { if (confirm(`Delete “${pl.name}”?`)) { library.playlists = library.playlists.filter(x => x !== pl); saveLibrary(); go('#/library'); } } }, h('span', { html: I.trash }), 'Delete') : null)));
+        !liked ? h('button', { class: 'btn ghost', onClick: async () => { const n = await askText('Rename playlist', { value: pl.name }); if (n) { pl.name = n; saveLibrary(); route(); } } }, 'Rename') : null,
+        !liked ? h('button', { class: 'btn ghost', onClick: async () => { if (await askConfirm(`Delete “${pl.name}”?`, { message: 'This removes the playlist from Strand only.', okLabel: 'Delete', danger: true })) { library.playlists = library.playlists.filter(x => x !== pl); saveLibrary(); go('#/library'); } } }, h('span', { html: I.trash }), 'Delete') : null)));
   if (art) hero.style.setProperty('--hero-img', `url("${art}")`);
   v.append(hero, h('div', { style: { marginTop: '20px' } }, pl.tracks.length ? trackRows(pl.tracks) : h('div', { class: 'empty' }, 'No songs yet — use “Add to playlist” from any track menu.')));
 }
@@ -345,7 +346,7 @@ views.liked = v => playlistView(v, { name: 'Liked songs', tracks: library.liked 
 views.library = v => {
   v.append(h('div', { class: 'eyebrow' }, 'Library'), h('h1', {}, 'Your Strand library'),
     h('div', { class: 'row-actions' },
-      h('button', { class: 'btn', onClick: () => { const n = prompt('Playlist name', 'My playlist'); if (n) { const pl = newPlaylist(n, []); go(`#/playlist/${pl.id}`); } } }, h('span', { html: I.plus }), 'New playlist'),
+      h('button', { class: 'btn', onClick: async () => { const n = await askText('New playlist', { value: 'My playlist', okLabel: 'Create' }); if (n) { const pl = newPlaylist(n, []); go(`#/playlist/${pl.id}`); } } }, h('span', { html: I.plus }), 'New playlist'),
       h('a', { class: 'btn ghost', href: '#/import' }, h('span', { html: I.import }), 'Import')));
   if (!library.playlists.length && !library.liked.length) {
     v.append(h('div', { class: 'empty' }, h('h3', {}, 'Nothing here yet'), h('div', {}, 'Like songs with the heart, or import a playlist from Spotify, Apple Music, YouTube or SoundCloud.')));
@@ -388,12 +389,24 @@ function accountTile(k) {
   let action;
   if (linked) {
     action = h('button', { class: 'btn small ghost', onClick: async () => {
-      if (!confirm(`Disconnect ${A.label}? Your Strand library stays as it is.`)) return;
+      if (!(await askConfirm(`Disconnect ${A.label}?`, { message: 'Your Strand library stays as it is.', okLabel: 'Disconnect', danger: true }))) return;
       try { await A.disconnect(); } catch (e) { toast(e.message); }
       clearRemoteCache(); route();
     } }, 'Disconnect');
   } else if (!A.configured()) {
-    action = h('a', { class: 'btn small ghost', href: '#/settings', title: 'The app owner needs to add a developer key first (Settings → Developer keys)' }, 'Needs setup');
+    // Missing developer key: ask for it right here, then connect.
+    const need = {
+      spotify: { key: 'spotifyClientId', title: 'Spotify Client ID', help: `From developer.spotify.com/dashboard → your app. Its Redirect URIs must include ${redirectUri()}` },
+      youtube: { key: 'googleClientId', title: 'Google OAuth Client ID', help: `From console.cloud.google.com → Credentials (Web application). Authorized JavaScript origins must include ${location.origin}` },
+      apple: { key: 'appleDevToken', title: 'Apple Music developer token', help: 'Generate it with: node tools/apple-token.js AuthKey.p8 KEY_ID TEAM_ID' },
+    }[k];
+    action = h('button', { class: 'btn small ghost', onClick: async () => {
+      const v = await askText(need.title, { message: need.help, placeholder: 'Paste it here', okLabel: 'Save & connect' });
+      if (!v) return;
+      setSetting(need.key, v);
+      if (k === 'apple') return location.reload();
+      try { await A.connect(); clearRemoteCache(); route(); } catch (err) { toast(err.message || 'Could not connect'); route(); }
+    } }, 'Set up');
   } else {
     action = h('button', { class: 'btn small primary', onClick: async e => {
       const b = e.currentTarget; b.disabled = true;

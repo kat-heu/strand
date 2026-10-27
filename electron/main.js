@@ -7,11 +7,13 @@ const { start } = require('../server');
 const { setupAutoUpdates } = require('./updater');
 
 const PORT = 5173;
+let mainWin = null;
+const focusWin = () => { if (!mainWin) return; if (mainWin.isMinimized()) mainWin.restore(); mainWin.show(); mainWin.focus(); };
 
 async function createWindow() {
   let url = `http://127.0.0.1:${PORT}/`;
   try {
-    ({ url } = await start(PORT));
+    ({ url } = await start(PORT, '127.0.0.1', { onAuth: focusWin }));
   } catch (e) {
     if (e.code !== 'EADDRINUSE') throw e; // already running (e.g. `npm start`) — just reuse it
   }
@@ -26,6 +28,7 @@ async function createWindow() {
     autoHideMenuBar: true,
     webPreferences: { contextIsolation: true, sandbox: true },
   });
+  mainWin = win;
 
   // Sign-in popups (Google, Apple Music) open inside the app so they can hand the
   // login back to the page; every other target=_blank link goes to the system browser.

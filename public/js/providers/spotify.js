@@ -33,13 +33,45 @@ export async function spotifyLogin() {
   const verifier = b64url(crypto.getRandomValues(new Uint8Array(64)));
   const challenge = b64url(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier)));
   const state = b64url(crypto.getRandomValues(new Uint8Array(16)));
-  sessionStorage.setItem('sp_verifier', verifier);
-  sessionStorage.setItem('sp_state', state);
-  sessionStorage.setItem('sp_return', location.hash || '#/settings');
-  location.href = `${AUTH}/authorize?` + new URLSearchParams({
+  const authUrl = `${AUTH}/authorize?` + new URLSearchParams({
     client_id: id, response_type: 'code', redirect_uri: redirectUri(),
     code_challenge_method: 'S256', code_challenge: challenge, scope: SCOPES, state,
   });
+  if (isDesktop()) return desktopLogin(authUrl, state, verifier);
+  sessionStorage.setItem('sp_verifier', verifier);
+  sessionStorage.setItem('sp_state', state);
+  sessionStorage.setItem('sp_return', location.hash || '#/settings');
+  location.href = authUrl;
+}
+
+// Desktop app: log in through the system browser, then collect the code from the
+// local server (see server.js). The app window never leaves Strand.
+export const isDesktop = () => /Electron\//.test(navigator.userAgent);
+let cancelDesktop = null;
+export const cancelSpotifyLogin = () => cancelDesktop?.();
+async function desktopLogin(authUrl, state, verifier) {
+  await fetch(`/__auth/start?state=${encodeURIComponent(state)}`, { method: 'POST' });
+  window.open(authUrl, '_blank'); // the desktop shell opens this in the default browser
+  emit('toast', 'Finish signing in to Spotify in your browser…');
+  let cancelled = false;
+  cancelDesktop = () => { cancelled = true; };
+  const until = Date.now() + 10 * 60000;
+  while (!cancelled && Date.now() < until) {
+    await new Promise(r => setTimeout(r, 1000));
+    const r = await fetch(`/__auth/result?state=${encodeURIComponent(state)}`).then(x => x.json()).catch(() => ({ pending: true }));
+    if (r.pending) continue;
+    if (r.error) throw new Error(r.error === 'expired' ? 'Spotify sign-in expired — try again' : 'Spotify sign-in was cancelled');
+    await finishLogin(r.code, verifier);
+    return spotifyProfile;
+  }
+  throw new Error(cancelled ? 'Spotify sign-in cancelled' : 'Spotify sign-in timed out — try again');
+}
+
+async function finishLogin(code, verifier) {
+  await tokenRequest({ grant_type: 'authorization_code', code, redirect_uri: redirectUri(), code_verifier: verifier });
+  spotifyProfile = await spApi('/me');
+  save(TKEY + ':me', spotifyProfile);
+  emit('auth');
 }
 
 export function spotifyLogout() {
@@ -70,11 +102,9 @@ export async function handleSpotifyCallback() {
   history.replaceState(null, '', location.pathname + ret);
   if (err) throw new Error('Spotify login cancelled: ' + err);
   if (state !== sessionStorage.getItem('sp_state')) throw new Error('Spotify login state mismatch — try again');
-  await tokenRequest({ grant_type: 'authorization_code', code, redirect_uri: redirectUri(), code_verifier: sessionStorage.getItem('sp_verifier') });
+  const verifier = sessionStorage.getItem('sp_verifier');
   sessionStorage.removeItem('sp_verifier'); sessionStorage.removeItem('sp_state');
-  spotifyProfile = await spApi('/me');
-  save(TKEY + ':me', spotifyProfile);
-  emit('auth');
+  await finishLogin(code, verifier);
   return spotifyProfile;
 }
 

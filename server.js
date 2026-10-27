@@ -16,9 +16,44 @@ const TYPES = {
   '.json': 'application/json',
 };
 
-function start(port = Number(process.env.PORT) || 5173, host = '127.0.0.1') {
+// Desktop sign-in hand-off. The desktop app opens the login page in the user's real
+// browser (login pages often refuse to load inside apps). The service redirects the
+// browser back to http://127.0.0.1:5173/?code=…&state=…; if that state was registered
+// by the app, we keep the code here and the app collects it. Other states fall
+// through to the normal web-app flow.
+const pending = new Map(); // state -> { code, error, at }
+const DONE_PAGE = ok => `<!doctype html><meta charset="utf-8"><title>Strand</title>
+<body style="margin:0;height:100vh;display:grid;place-items:center;background:#0c0b10;color:#f3f1f7;font:16px system-ui,sans-serif;text-align:center">
+<div><div style="font-size:42px">${ok ? '✓' : '⚠️'}</div><h2 style="margin:8px 0">${ok ? 'Signed in to Strand' : 'Sign-in was cancelled'}</h2>
+<p style="color:#a19eb0">You can close this tab and go back to Strand.</p></div>
+<script>setTimeout(() => window.close(), 1500)</script>`;
+
+function start(port = Number(process.env.PORT) || 5173, host = '127.0.0.1', opts = {}) {
   return new Promise((resolve, reject) => {
     const srv = http.createServer((req, res) => {
+      let u;
+      try { u = new URL(req.url, 'http://x'); } catch { u = new URL('http://x/'); }
+      const state = u.searchParams.get('state');
+      if (u.pathname === '/__auth/start' && req.method === 'POST' && state) {
+        for (const [k, v] of pending) if (Date.now() - v.at > 15 * 60000) pending.delete(k);
+        pending.set(state, { code: null, error: null, at: Date.now() });
+        res.writeHead(204); return res.end();
+      }
+      if (u.pathname === '/__auth/result' && state) {
+        const e = pending.get(state);
+        res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+        if (!e) return res.end(JSON.stringify({ error: 'expired' }));
+        if (e.code || e.error) { pending.delete(state); return res.end(JSON.stringify({ code: e.code, error: e.error })); }
+        return res.end(JSON.stringify({ pending: true }));
+      }
+      if (u.pathname === '/' && state && pending.has(state) && (u.searchParams.get('code') || u.searchParams.get('error'))) {
+        const e = pending.get(state);
+        e.code = u.searchParams.get('code'); e.error = u.searchParams.get('error');
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end(DONE_PAGE(!!e.code));
+        try { opts.onAuth?.(); } catch {}
+        return;
+      }
       let p;
       try { p = decodeURIComponent(new URL(req.url, 'http://x').pathname); } catch { p = '/'; }
       if (p === '/') p = '/index.html';

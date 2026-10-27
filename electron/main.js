@@ -4,6 +4,7 @@
 // build (see README) — it exposes `components`, which we wait on below.
 const { app, BrowserWindow, shell, components } = require('electron');
 const { start } = require('../server');
+const { setupAutoUpdates } = require('./updater');
 
 const PORT = 5173;
 
@@ -52,6 +53,7 @@ app.whenReady().then(async () => {
     }
   }
   await createWindow();
+  setupAutoUpdates();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });

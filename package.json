@@ -1,7 +1,7 @@
 {
   "name": "strand",
   "productName": "Strand",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "One player for Spotify, Apple Music, YouTube Music and SoundCloud \u2014 synced lyrics, visualizer, playlist import.",
   "main": "electron/main.js",
   "scripts": {
@@ -49,5 +49,8 @@
     "type": "git",
     "url": "https://github.com/kat-heu/strand.git"
   },
-  "author": "kat-heu"
+  "author": "kat-heu",
+  "dependencies": {
+    "electron-updater": "^6.3.9"
+  }
 }

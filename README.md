@@ -75,6 +75,7 @@ Pick a current tag from https://github.com/castlabs/electron-releases/releases. 
 ## GitHub
 
 - **Tests:** every push to `main` runs the full feature test suite (`tests/e2e.js`, 59 checks with all outside services mocked). Run it locally with `npm install && npx playwright install chromium && npm test`.
+- **Automatic updates:** the installed desktop app checks GitHub for a newer release on launch and every 4 hours, downloads it in the background and offers to restart (or installs when you close it). This needs the repository to be public. It works on Windows and Linux; macOS auto-update needs a signed app.
 - **Desktop installers:** push a version tag (`git tag v0.1.0 && git push --tags`) and GitHub Actions builds Windows (.exe), macOS (.dmg) and Linux (.AppImage) installers, then attaches them to a draft Release for you to publish. The builds are unsigned, so Windows and macOS show a warning the first time someone opens them. Add code-signing certificates later to remove it.
 - **Web version on GitHub Pages:** go to *Settings → Pages* and set Source to **GitHub Actions**, then run **Publish web version** from the Actions tab. The site appears at `https://kat-heu.github.io/strand/`. Add that address as a Spotify redirect URI (with the trailing slash) and as a Google Authorized JavaScript origin (`https://kat-heu.github.io`). Pages is free for public repositories; private ones need a paid GitHub plan.
 

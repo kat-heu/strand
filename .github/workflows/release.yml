@@ -1,17 +1,69 @@
 name: Build desktop apps
 
-# Push a version tag (e.g. `git tag v0.1.0 && git push --tags`) to build
-# Windows / macOS / Linux installers and attach them to a draft GitHub Release.
+# Builds Windows (.exe), macOS (.dmg) and Linux (.AppImage) installers and
+# publishes them as a GitHub Release named after the version in package.json.
+#
+# Runs on every push to main, but only builds when that version has no
+# published release yet. To ship a new version, bump "version" in
+# package.json and push.
 on:
   push:
+    branches: [main]
     tags: ['v*']
   workflow_dispatch:
 
 permissions:
   contents: write
 
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      needed: ${{ steps.v.outputs.needed }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          V=$(node -p "require('./package.json').version")
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          DRAFT=$(gh release view "v$V" --repo "$GITHUB_REPOSITORY" --json isDraft -q .isDraft 2>/dev/null || echo none)
+          if [ "$DRAFT" = "false" ]; then
+            echo "v$V is already released — nothing to build."
+            echo "needed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "needed=true" >> "$GITHUB_OUTPUT"
+          if [ "$DRAFT" = "none" ]; then
+            # Create the draft once, so the three parallel builds upload into the same release.
+            gh release create "v$V" --repo "$GITHUB_REPOSITORY" --draft --target "$GITHUB_SHA" \
+              --title "Strand $V" --notes-file - <<'NOTES'
+          ## Download
+
+          | System | File |
+          |---|---|
+          | **Windows** | `Strand-Setup-*.exe` |
+          | **macOS** | `Strand-*.dmg` |
+          | **Linux** | `Strand-*.AppImage` |
+
+          These builds aren't code-signed yet, so the first launch shows a warning:
+          - **Windows:** "Windows protected your PC" → **More info** → **Run anyway**.
+          - **macOS:** right-click the app → **Open** → **Open**.
+          - **Linux:** make the AppImage executable (`chmod +x`), then run it.
+
+          Full-length Spotify and Apple Music playback in the desktop app needs the Widevine-enabled Electron build (see README). YouTube, SoundCloud and previews work out of the box.
+          NOTES
+          fi
+
   build:
+    needs: check
+    if: needs.check.outputs.needed == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -23,8 +75,8 @@ jobs:
         with:
           node-version: 20
       - run: npm install --no-audit --no-fund
-      - name: Build installers
-        run: npx electron-builder --publish ${{ startsWith(github.ref, 'refs/tags/') && 'always' || 'never' }}
+      - name: Build installers and upload to the release
+        run: npx electron-builder --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'   # unsigned builds; add signing certificates later
@@ -36,3 +88,12 @@ jobs:
             dist/*.dmg
             dist/*.AppImage
           if-no-files-found: ignore
+
+  publish:
+    needs: [check, build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "v${{ needs.check.outputs.version }}" --repo "$GITHUB_REPOSITORY" --draft=false --latest

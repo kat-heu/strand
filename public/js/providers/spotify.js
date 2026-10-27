@@ -1,0 +1,291 @@
+// Spotify via the official Web Playback SDK + Web API, using PKCE login (no client secret).
+// Requirements: each listener has Spotify Premium, and while your Spotify app is in
+// "Development mode" only users you add in the Spotify dashboard can log in.
+import { settings, load, save, emit, cacheGet, cacheSet } from '../store.js';
+import { matchScore, loadScript } from '../util.js';
+
+const AUTH = 'https://accounts.spotify.com';
+const API = 'https://api.spotify.com/v1';
+const TKEY = 'strand:spotify';
+const SCOPES = [
+  'streaming', 'user-read-email', 'user-read-private',
+  'user-read-playback-state', 'user-modify-playback-state',
+  'playlist-read-private', 'playlist-read-collaborative', 'user-library-read',
+  'user-top-read', 'user-read-recently-played', 'user-follow-read',
+].join(' ');
+
+let tok = load(TKEY, null); // { access, refresh, exp }
+export let spotifyProfile = load(TKEY + ':me', null);
+
+// The app's own base address (works at the site root or under a sub-path such as GitHub Pages).
+export const redirectUri = () => location.origin + location.pathname.replace(/[^/]*$/, '');
+export const spotifyConnected = () => !!tok?.refresh;
+// True when the saved login predates permissions this version asks for.
+export const spotifyNeedsReconnect = () => !!tok && SCOPES.split(' ').some(sc => !(tok.scope || '').split(' ').includes(sc));
+
+function b64url(buf) {
+  return btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+export async function spotifyLogin() {
+  const id = settings.spotifyClientId.trim();
+  if (!id) throw new Error('Add your Spotify Client ID first');
+  const verifier = b64url(crypto.getRandomValues(new Uint8Array(64)));
+  const challenge = b64url(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier)));
+  const state = b64url(crypto.getRandomValues(new Uint8Array(16)));
+  sessionStorage.setItem('sp_verifier', verifier);
+  sessionStorage.setItem('sp_state', state);
+  sessionStorage.setItem('sp_return', location.hash || '#/settings');
+  location.href = `${AUTH}/authorize?` + new URLSearchParams({
+    client_id: id, response_type: 'code', redirect_uri: redirectUri(),
+    code_challenge_method: 'S256', code_challenge: challenge, scope: SCOPES, state,
+  });
+}
+
+export function spotifyLogout() {
+  tok = null; spotifyProfile = null;
+  localStorage.removeItem(TKEY); localStorage.removeItem(TKEY + ':me');
+  emit('auth');
+}
+
+async function tokenRequest(body) {
+  const r = await fetch(`${AUTH}/api/token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ client_id: settings.spotifyClientId.trim(), ...body }),
+  });
+  const d = await r.json();
+  if (!r.ok) throw new Error(d.error_description || d.error || 'Spotify token error');
+  tok = { access: d.access_token, refresh: d.refresh_token || tok?.refresh, exp: Date.now() + d.expires_in * 1000, scope: d.scope || tok?.scope || '' };
+  save(TKEY, tok);
+  return tok;
+}
+
+// Call at startup: finishes the redirect from Spotify's login page.
+export async function handleSpotifyCallback() {
+  const u = new URL(location.href);
+  const code = u.searchParams.get('code'), state = u.searchParams.get('state'), err = u.searchParams.get('error');
+  if (!code && !err) return null;
+  const ret = sessionStorage.getItem('sp_return') || '#/settings';
+  history.replaceState(null, '', location.pathname + ret);
+  if (err) throw new Error('Spotify login cancelled: ' + err);
+  if (state !== sessionStorage.getItem('sp_state')) throw new Error('Spotify login state mismatch — try again');
+  await tokenRequest({ grant_type: 'authorization_code', code, redirect_uri: redirectUri(), code_verifier: sessionStorage.getItem('sp_verifier') });
+  sessionStorage.removeItem('sp_verifier'); sessionStorage.removeItem('sp_state');
+  spotifyProfile = await spApi('/me');
+  save(TKEY + ':me', spotifyProfile);
+  emit('auth');
+  return spotifyProfile;
+}
+
+let refreshing = null;
+async function accessToken() {
+  if (!tok) throw new Error('Spotify not connected');
+  if (Date.now() > tok.exp - 60000) {
+    refreshing ??= tokenRequest({ grant_type: 'refresh_token', refresh_token: tok.refresh }).finally(() => { refreshing = null; });
+    try { await refreshing; } catch (e) { spotifyLogout(); throw e; }
+  }
+  return tok.access;
+}
+
+export async function spApi(path, opts = {}, retry = true) {
+  const url = path.startsWith('http') ? path : API + path;
+  const r = await fetch(url, { ...opts, headers: { Authorization: 'Bearer ' + await accessToken(), 'Content-Type': 'application/json', ...(opts.headers || {}) } });
+  if (r.status === 401 && retry) { tok.exp = 0; return spApi(path, opts, false); }
+  if (r.status === 429 && retry) {
+    await new Promise(res => setTimeout(res, (Number(r.headers.get('Retry-After')) || 2) * 1000));
+    return spApi(path, opts, false);
+  }
+  if (r.status === 204 || r.status === 202) return null;
+  const text = await r.text();
+  const d = text ? JSON.parse(text) : null;
+  if (!r.ok) {
+    const e = new Error(r.status === 429 ? 'Spotify rate limit reached — try again in a minute' : (d?.error?.message || 'Spotify HTTP ' + r.status));
+    e.status = r.status; throw e;
+  }
+  return d;
+}
+
+export function spToTrack(t) {
+  return {
+    key: 'sp:' + t.id,
+    title: t.name,
+    artist: (t.artists || []).map(a => a.name).join(', '),
+    album: t.album?.name || '',
+    artwork: t.album?.images?.[0]?.url || '',
+    durationMs: t.duration_ms,
+    explicit: t.explicit,
+    origin: 'spotify',
+    ids: { spotify: t.uri, isrc: t.external_ids?.isrc },
+  };
+}
+
+let sdkReady;
+function loadSdk() {
+  return sdkReady ??= new Promise((res, rej) => {
+    if (window.Spotify?.Player) return res();
+    window.onSpotifyWebPlaybackSDKReady = res;
+    loadScript('https://sdk.scdn.co/spotify-player.js').catch(e => { sdkReady = null; rej(e); });
+  });
+}
+
+export function createSpotify(ctx) {
+  let player = null, deviceId = null, ready = null;
+  let st = { pos: 0, dur: 0, paused: true, at: 0 }, currentUri = null, nearEnd = false, endedFor = null;
+
+  function onState(s) {
+    if (!s) return;
+    st = { pos: s.position, dur: s.duration, paused: s.paused, at: performance.now() };
+    const cur = s.track_window?.current_track;
+    if (!s.paused && s.duration && s.position > s.duration - 2500) nearEnd = true;
+    const finished = s.paused && currentUri && endedFor !== currentUri &&
+      ((s.position === 0 && (nearEnd || s.track_window?.previous_tracks?.some(t => t.uri === currentUri))) ||
+       (cur && cur.uri !== currentUri && nearEnd));
+    if (finished) { endedFor = currentUri; ctx.onEnded(); }
+  }
+
+  async function ensure() {
+    if (ready) return ready;
+    ready = (async () => {
+      await loadSdk();
+      player = new window.Spotify.Player({
+        name: 'Strand',
+        getOAuthToken: cb => accessToken().then(cb, e => ctx.onError(e)),
+        volume: settings.volume,
+      });
+      const dev = new Promise((res, rej) => {
+        player.addListener('ready', ({ device_id }) => { deviceId = device_id; res(); });
+        player.addListener('not_ready', () => { deviceId = null; });
+        player.addListener('initialization_error', ({ message }) => rej(new Error(message + ' (this window may lack Widevine DRM)')));
+        player.addListener('authentication_error', ({ message }) => rej(new Error(message)));
+        player.addListener('account_error', () => rej(new Error('Spotify Premium is required for playback')));
+        setTimeout(() => rej(new Error('Spotify player timed out')), 15000);
+      });
+      player.addListener('player_state_changed', onState);
+      player.addListener('playback_error', ({ message }) => ctx.onError(new Error(message)));
+      if (!(await player.connect())) throw new Error('Spotify player failed to connect');
+      await dev;
+      return player;
+    })();
+    ready.catch(() => { ready = null; try { player?.disconnect(); } catch {} });
+    return ready;
+  }
+
+  async function resolve(t) {
+    if (t.ids?.spotify) return { uri: t.ids.spotify, score: null };
+    const cached = cacheGet('sp', t.key);
+    if (cached) return cached;
+    let items = [];
+    if (t.ids?.isrc) items = (await spApi(`/search?type=track&limit=3&q=${encodeURIComponent('isrc:' + t.ids.isrc)}`)).tracks.items;
+    if (!items.length) {
+      const q = `track:${t.title.replace(/["']/g, '')} artist:${t.artist.split(/,|&/)[0].trim()}`;
+      items = (await spApi(`/search?type=track&limit=8&q=${encodeURIComponent(q)}`)).tracks.items;
+    }
+    if (!items.length) items = (await spApi(`/search?type=track&limit=8&q=${encodeURIComponent(t.artist + ' ' + t.title)}`)).tracks.items;
+    let best = null, score = 0;
+    for (const it of items) {
+      const sc = matchScore(t, { title: it.name, artist: it.artists.map(a => a.name).join(' '), durationMs: it.duration_ms });
+      if (sc > score) { score = sc; best = it; }
+    }
+    if (!best || score < 0.55) throw new Error('not found on Spotify');
+    const out = { uri: best.uri, score };
+    cacheSet('sp', t.key, out);
+    return out;
+  }
+
+  return {
+    name: 'spotify',
+    label: 'Spotify',
+    available: () => spotifyConnected(),
+    canPlay: () => spotifyConnected(),
+    async load(t) {
+      const { uri, score } = await resolve(t);
+      await ensure();
+      try { player.activateElement?.(); } catch {}
+      nearEnd = false; endedFor = null; currentUri = uri;
+      st = { pos: 0, dur: t.durationMs || 0, paused: false, at: performance.now() };
+      await spApi(`/me/player/play?device_id=${deviceId}`, { method: 'PUT', body: JSON.stringify({ uris: [uri] }) });
+      return { score };
+    },
+    play: () => player?.resume(),
+    pause: () => player?.pause(),
+    seek: ms => { player?.seek(Math.round(ms)); st.pos = ms; st.at = performance.now(); },
+    setVolume: v => player?.setVolume(v),
+    position: () => {
+      const p = st.paused ? st.pos : Math.min(st.dur || Infinity, st.pos + (performance.now() - st.at));
+      if (!st.paused && st.dur && p > st.dur - 2500) nearEnd = true;
+      return p;
+    },
+    duration: () => st.dur,
+    isPlaying: () => !st.paused,
+    stop: () => { currentUri = null; try { player?.pause(); } catch {} },
+  };
+}
+
+// ---- import helpers --------------------------------------------------------
+export const playlistTotal = p => p.items?.total ?? p.tracks?.total ?? 0;
+export async function spotifyPlaylists() {
+  const out = [];
+  let next = '/me/playlists?limit=50';
+  while (next && out.length < 500) {
+    const d = await spApi(next);
+    out.push(...d.items.filter(Boolean));
+    next = d.next;
+  }
+  return out;
+}
+
+export async function spotifyCollection(kind, id, onProgress) {
+  if (kind === 'track') {
+    const t = await spApi(`/tracks/${id}`);
+    return { name: t.name, tracks: [spToTrack(t)] };
+  }
+  if (kind === 'album') {
+    const a = await spApi(`/albums/${id}`);
+    const tracks = [];
+    let page = a.tracks;
+    while (page) {
+      tracks.push(...page.items.map(t => spToTrack({ ...t, album: a })));
+      onProgress?.(tracks.length, a.tracks.total);
+      page = page.next ? await spApi(page.next) : null;
+    }
+    return { name: a.name, artwork: a.images?.[0]?.url, tracks };
+  }
+  if (kind === 'liked') {
+    const tracks = [];
+    let next = '/me/tracks?limit=50', total = 0;
+    while (next) {
+      const d = await spApi(next);
+      total = d.total;
+      tracks.push(...d.items.map(i => i.track).filter(Boolean).map(spToTrack));
+      onProgress?.(tracks.length, total);
+      next = d.next;
+    }
+    return { name: 'Spotify Liked Songs', tracks };
+  }
+  // Spotify Web API (Feb 2026): playlist songs come from /playlists/{id}/items, each row's
+  // song is in `item` (older responses used `track`), and only playlists the listener
+  // owns or collaborates on return their songs.
+  const p = await spApi(`/playlists/${id}`);
+  const total = p.items?.total ?? p.tracks?.total;
+  const tracks = [];
+  let next = `/playlists/${id}/items?limit=50`;
+  try {
+    while (next) {
+      const d = await spApi(next);
+      for (const row of d.items || []) {
+        const t = (row.item && typeof row.item === 'object') ? row.item : (row.track && typeof row.track === 'object') ? row.track : null;
+        if (t?.id && (!t.type || t.type === 'track')) tracks.push(spToTrack(t));
+      }
+      onProgress?.(tracks.length, total);
+      next = d.next;
+    }
+  } catch (e) {
+    if (e.status === 403 || e.status === 404) {
+      const err = new Error(`Spotify only lets apps read songs from playlists you created or collaborate on. “${p.name}” can still be played in the Spotify app.`);
+      err.openUrl = `https://open.spotify.com/playlist/${id}`; throw err;
+    }
+    throw e;
+  }
+  return { name: p.name, artwork: p.images?.[0]?.url, tracks };
+}

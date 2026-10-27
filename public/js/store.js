@@ -1,0 +1,79 @@
+// Settings, library and a tiny event bus. Everything persists in localStorage.
+import CONFIG from '../config.js';
+const SKEY = 'strand:settings';
+const LKEY = 'strand:library';
+
+function load(k, d) {
+  try { const v = JSON.parse(localStorage.getItem(k)); return v ?? d; } catch { return d; }
+}
+export function save(k, v) {
+  try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* storage full / blocked */ }
+}
+export { load };
+
+const defaults = {
+  spotifyClientId: '',
+  googleClientId: '',
+  youtubeKey: '',
+  appleDevToken: '',
+  scProfile: '',          // linked SoundCloud profile URL
+  preferred: 'auto',      // auto | spotify | apple | youtube | preview
+  volume: 0.8,
+  lyricsOffset: 0,        // ms, applied to lyric timing
+  country: 'us',          // iTunes / Apple Music storefront
+  shareBase: '',          // public URL for share links (defaults to current origin)
+};
+
+export const settings = { ...defaults, ...load(SKEY, {}) };
+// Keys baked into config.js apply unless this device set its own.
+for (const [k, v] of Object.entries(CONFIG)) if (v && !settings[k]) settings[k] = v;
+export const fromConfig = k => !!CONFIG[k] && settings[k] === CONFIG[k];
+export function setSetting(k, v) {
+  settings[k] = v;
+  save(SKEY, settings);
+  emit('settings', k);
+}
+
+export const library = { playlists: [], liked: [], recent: [], ...load(LKEY, {}) };
+export function saveLibrary() {
+  save(LKEY, library);
+  emit('library');
+}
+
+export function isLiked(t) { return library.liked.some(x => x.key === t.key); }
+export function toggleLike(t) {
+  const i = library.liked.findIndex(x => x.key === t.key);
+  if (i >= 0) library.liked.splice(i, 1); else library.liked.unshift(t);
+  saveLibrary();
+}
+export function pushRecent(t) {
+  library.recent = [t, ...library.recent.filter(x => x.key !== t.key)].slice(0, 24);
+  save(LKEY, library);
+}
+
+// Event bus
+const subs = new Map();
+export function on(evt, fn) {
+  if (!subs.has(evt)) subs.set(evt, new Set());
+  subs.get(evt).add(fn);
+  return () => subs.get(evt).delete(fn);
+}
+export function emit(evt, data) {
+  subs.get(evt)?.forEach(fn => { try { fn(data); } catch (e) { console.error(e); } });
+}
+
+// Small persistent cache for resolved ids (track -> spotify uri / youtube id),
+// so we don't burn API quota resolving the same song twice.
+const CKEY = 'strand:resolve';
+const resolveCache = load(CKEY, {});
+export function cacheGet(ns, key) { return resolveCache[ns + '|' + key]; }
+export function cacheSet(ns, key, val) {
+  resolveCache[ns + '|' + key] = val;
+  const keys = Object.keys(resolveCache);
+  if (keys.length > 3000) keys.slice(0, 500).forEach(k => delete resolveCache[k]);
+  save(CKEY, resolveCache);
+}
+export function clearCaches() {
+  Object.keys(resolveCache).forEach(k => delete resolveCache[k]);
+  save(CKEY, resolveCache);
+}

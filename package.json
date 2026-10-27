@@ -1,0 +1,53 @@
+{
+  "name": "strand",
+  "productName": "Strand",
+  "version": "0.1.0",
+  "description": "One player for Spotify, Apple Music, YouTube Music and SoundCloud \u2014 synced lyrics, visualizer, playlist import.",
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "node server.js",
+    "desktop": "electron .",
+    "dist": "electron-builder",
+    "test": "node tests/e2e.js"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8",
+    "playwright": "^1.48.0"
+  },
+  "build": {
+    "appId": "app.strand.player",
+    "productName": "Strand",
+    "files": [
+      "electron/**",
+      "public/**",
+      "server.js",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis"
+    },
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.music"
+    },
+    "linux": {
+      "target": "AppImage",
+      "category": "Audio"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "kat-heu",
+        "repo": "strand",
+        "releaseType": "draft"
+      }
+    ]
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kat-heu/strand.git"
+  },
+  "author": "kat-heu"
+}

@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Strand</title>
+  <meta name="description" content="One player for Spotify, Apple Music, YouTube Music and SoundCloud.">
+  <link rel="icon" href="icon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <a class="brand" href="#/">
+        <svg viewBox="0 0 32 32" width="26" height="26" aria-hidden="true"><defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="var(--accent)"/><stop offset="1" stop-color="var(--accent-2)"/></linearGradient></defs><rect width="32" height="32" rx="9" fill="url(#bg)"/><path d="M8 19c3-6 5 6 8 0s5 6 8 0" stroke="#0c0b10" stroke-width="2.6" fill="none" stroke-linecap="round"/></svg>
+        <span>Strand</span>
+      </a>
+      <nav class="nav" id="nav"></nav>
+      <div class="side-label">Your playlists</div>
+      <div id="side-playlists" class="side-playlists"></div>
+      <div id="conn" class="conn"></div>
+    </aside>
+
+    <main id="main" class="main" tabindex="-1"></main>
+
+    <aside class="panel" id="panel">
+      <div class="np-media" id="np-media">
+        <img id="np-art" alt="">
+        <div id="media-yt" class="media-host"></div>
+        <div id="media-sc" class="media-host"></div>
+        <div id="np-empty" class="np-empty">Nothing playing</div>
+      </div>
+      <div class="np-meta">
+        <div id="np-title" class="np-title"></div>
+        <div id="np-artist" class="np-artist"></div>
+        <div id="np-source" class="np-source"></div>
+      </div>
+      <div class="tabs" role="tablist">
+        <button data-tab="lyrics" class="on" role="tab">Lyrics</button>
+        <button data-tab="queue" role="tab">Up next</button>
+      </div>
+      <div id="panel-body" class="panel-body"></div>
+    </aside>
+  </div>
+
+  <footer class="bar" id="bar">
+    <div class="bar-left">
+      <img id="bar-art" class="bar-art" alt="">
+      <div class="bar-meta">
+        <div id="bar-title" class="bar-title">Pick something to play</div>
+        <div id="bar-artist" class="bar-artist"></div>
+      </div>
+      <button id="bar-like" class="icon-btn" title="Like"></button>
+    </div>
+    <div class="bar-center">
+      <div class="controls">
+        <button id="btn-shuffle" class="icon-btn" title="Shuffle"></button>
+        <button id="btn-prev" class="icon-btn" title="Previous"></button>
+        <button id="btn-play" class="play-btn" title="Play / pause (Space)"></button>
+        <button id="btn-next" class="icon-btn" title="Next"></button>
+        <button id="btn-repeat" class="icon-btn" title="Repeat"></button>
+      </div>
+      <div class="progress">
+        <span id="t-pos">0:00</span>
+        <input id="seek" type="range" min="0" max="1000" value="0" aria-label="Seek">
+        <span id="t-dur">0:00</span>
+      </div>
+    </div>
+    <div class="bar-right">
+      <span id="bar-source" class="src-pill"></span>
+      <button id="btn-stage" class="icon-btn" title="Full-screen lyrics & visualizer (L)"></button>
+      <button id="btn-panel" class="icon-btn" title="Toggle side panel"></button>
+      <button id="btn-mute" class="icon-btn" title="Mute"></button>
+      <input id="volume" type="range" min="0" max="100" aria-label="Volume">
+    </div>
+  </footer>
+
+  <div id="stage" class="stage" hidden>
+    <canvas id="stage-viz"></canvas>
+    <div class="stage-bg" id="stage-bg"></div>
+    <button id="stage-close" class="icon-btn stage-close" title="Close (Esc)"></button>
+    <div class="stage-inner">
+      <div class="stage-left">
+        <img id="stage-art" alt="">
+        <div id="stage-title" class="stage-title"></div>
+        <div id="stage-artist" class="stage-artist"></div>
+        <div id="stage-tools" class="stage-tools"></div>
+      </div>
+      <div class="stage-lyrics" id="stage-lyrics"></div>
+    </div>
+  </div>
+
+  <div id="menu" class="menu" hidden></div>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

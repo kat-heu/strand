@@ -130,7 +130,7 @@ export const ACCOUNTS = {
     configured: () => true,
     linked: () => !!settings.scProfile,
     connect: async () => {
-      const input = await askText('Link your SoundCloud profile', { placeholder: 'https://soundcloud.com/yourname', message: 'Paste your profile link or username. Your likes and uploads need to be public.', okLabel: 'Link' });
+      const input = await askText('Your SoundCloud username', { placeholder: 'e.g. kat (or your profile link)', message: 'The name in your SoundCloud profile address: soundcloud.com/your-name. Your likes and uploads need to be public.', okLabel: 'Connect' });
       if (!input) return;
       const url = scNormalize(input.trim());
       if (!url) throw new Error('That isn’t a SoundCloud profile link');

@@ -48,7 +48,8 @@ async function createWindow() {
 
   // Sign-in popups (Google, Apple Music) open inside the app so they can hand the
   // login back to the page; every other target=_blank link goes to the system browser.
-  const AUTH_HOSTS = ['accounts.google.com', 'authorize.music.apple.com', 'idmsa.apple.com', 'appleid.apple.com'];
+  // (Google blocks sign-in inside apps, so accounts.google.com goes to the browser.)
+  const AUTH_HOSTS = ['authorize.music.apple.com', 'idmsa.apple.com', 'appleid.apple.com'];
   win.webContents.setWindowOpenHandler(({ url }) => {
     let host = '';
     try { host = new URL(url).hostname; } catch {}

@@ -46,6 +46,22 @@ function start(port = Number(process.env.PORT) || 5173, host = '127.0.0.1', opts
         if (e.code || e.error) { pending.delete(state); return res.end(JSON.stringify({ code: e.code, error: e.error })); }
         return res.end(JSON.stringify({ pending: true }));
       }
+      // Token-style sign-ins (Google) arrive via public/callback.html, which posts them here.
+      if (u.pathname === '/__auth/deliver' && req.method === 'POST' && state) {
+        let body = '';
+        req.on('data', c => { body += c; if (body.length > 20000) req.destroy(); });
+        req.on('end', () => {
+          const e = pending.get(state);
+          if (!e) { res.writeHead(404); return res.end(); }
+          let d = {};
+          try { d = JSON.parse(body); } catch {}
+          if (d.error || !d.access_token) e.error = d.error || 'cancelled';
+          else e.code = JSON.stringify({ access_token: d.access_token, expires_in: d.expires_in });
+          res.writeHead(204); res.end();
+          try { opts.onAuth?.(); } catch {}
+        });
+        return;
+      }
       if (u.pathname === '/' && state && pending.has(state) && (u.searchParams.get('code') || u.searchParams.get('error'))) {
         const e = pending.get(state);
         e.code = u.searchParams.get('code'); e.error = u.searchParams.get('error');

@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Strand</title>
+<style>
+  body { margin: 0; height: 100vh; display: grid; place-items: center; background: #0c0b10; color: #f3f1f7; font: 16px system-ui, sans-serif; text-align: center; }
+  p { color: #a19eb0; }
+</style>
+</head>
+<body>
+<div><div id="icon" style="font-size:42px">…</div><h2 id="title" style="margin:8px 0">Finishing sign-in…</h2><p id="sub"></p></div>
+<script>
+  // Sign-in landing page for the desktop app (Google returns the result after "#",
+  // which never reaches the server, so this page hands it to Strand's local server).
+  (async () => {
+    const h = new URLSearchParams(location.hash.slice(1)), q = new URLSearchParams(location.search);
+    const state = h.get('state') || q.get('state');
+    const error = h.get('error') || q.get('error');
+    const set = (icon, title, sub) => { document.getElementById('icon').textContent = icon; document.getElementById('title').textContent = title; document.getElementById('sub').textContent = sub; };
+    try {
+      const r = await fetch('/__auth/deliver?state=' + encodeURIComponent(state || ''), {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ access_token: h.get('access_token'), expires_in: h.get('expires_in'), error }),
+      });
+      if (!r.ok) throw new Error();
+      history.replaceState(null, '', location.pathname); // drop the token from the address bar
+      if (error) set('⚠️', 'Sign-in was cancelled', 'You can close this tab and go back to Strand.');
+      else { set('✓', 'Signed in to Strand', 'You can close this tab and go back to Strand.'); setTimeout(() => window.close(), 1500); }
+    } catch {
+      set('⚠️', 'Strand isn’t waiting for this sign-in', 'Open Strand and click Connect again.');
+    }
+  })();
+</script>
+</body>
+</html>

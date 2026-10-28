@@ -10,7 +10,7 @@ export default {
 
   // Google OAuth 2.0 Client ID (type "Web application") — console.cloud.google.com
   // Lets listeners sign in with Google to see their YouTube / YouTube Music playlists & likes.
-  googleClientId: '',
+  googleClientId: '240686563429-1obqmqnfpuk1a22lnfmpn5d1p6lvruj5.apps.googleusercontent.com',
 
   // Optional YouTube Data API key — lets people who haven't signed in with Google
   // still play songs via YouTube. Restrict it to your domain in Google Cloud.

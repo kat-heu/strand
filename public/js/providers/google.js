@@ -22,7 +22,42 @@ async function gis() {
   return window.google.accounts.oauth2;
 }
 
+const isDesktop = () => !!window.strandDesktop || /Electron\//.test(navigator.userAgent);
+const rand = () => btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(16)))).replace(/[+/=]/g, '');
+
+// Desktop app: Google blocks sign-in inside apps, so sign in through the default
+// browser. Google sends the token to callback.html, which hands it to the local server.
+async function desktopToken(prompt) {
+  const state = rand();
+  await fetch(`/__auth/start?state=${encodeURIComponent(state)}`, { method: 'POST' });
+  const params = {
+    client_id: settings.googleClientId.trim(),
+    redirect_uri: location.origin + '/callback.html',
+    response_type: 'token',
+    scope: SCOPE,
+    include_granted_scopes: 'true',
+    state,
+  };
+  if (prompt) params.prompt = prompt;
+  window.open('https://accounts.google.com/o/oauth2/v2/auth?' + new URLSearchParams(params), '_blank');
+  emit('toast', 'Finish signing in with Google in your browser…');
+  const until = Date.now() + 10 * 60000;
+  while (Date.now() < until) {
+    await new Promise(r => setTimeout(r, 1000));
+    const r = await fetch(`/__auth/result?state=${encodeURIComponent(state)}`).then(x => x.json()).catch(() => ({ pending: true }));
+    if (r.pending) continue;
+    if (r.error || !r.code) throw new Error(r.error === 'expired' ? 'Google sign-in expired. Try again.' : 'Google sign-in was cancelled');
+    const t = JSON.parse(r.code);
+    tok = { access: t.access_token, exp: Date.now() + Number(t.expires_in || 3600) * 1000 };
+    save(KEY, tok);
+    emit('auth');
+    return tok.access;
+  }
+  throw new Error('Google sign-in timed out. Try again.');
+}
+
 function requestToken(prompt) {
+  if (isDesktop()) return desktopToken(prompt);
   return new Promise(async (res, rej) => {
     try {
       const oauth2 = await gis();

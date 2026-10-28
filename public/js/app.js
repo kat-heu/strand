@@ -395,19 +395,9 @@ function accountTile(k) {
       clearRemoteCache(); route();
     } }, 'Disconnect');
   } else if (!A.configured()) {
-    // Missing developer key: ask for it right here, then connect.
-    const need = {
-      spotify: { key: 'spotifyClientId', title: 'Spotify Client ID', help: `From developer.spotify.com/dashboard → your app. Its Redirect URIs must include ${redirectUri()}` },
-      youtube: { key: 'googleClientId', title: 'Google OAuth Client ID', help: `From console.cloud.google.com → Credentials (Web application). Authorized JavaScript origins must include ${location.origin}` },
-      apple: { key: 'appleDevToken', title: 'Apple Music developer token', help: 'Generate it with: node tools/apple-token.js AuthKey.p8 KEY_ID TEAM_ID' },
-    }[k];
-    action = h('button', { class: 'btn small ghost', onClick: async () => {
-      const v = await askText(need.title, { message: need.help, placeholder: 'Paste it here', okLabel: 'Save & connect' });
-      if (!v) return;
-      setSetting(need.key, v);
-      if (k === 'apple') return location.reload();
-      try { await A.connect(); clearRemoteCache(); route(); } catch (err) { toast(err.message || 'Could not connect'); route(); }
-    } }, 'Set up');
+    // Not set up by the app owner yet: no developer prompts for listeners
+    // (keys live in Settings → Developer keys).
+    action = h('button', { class: 'btn small ghost', disabled: true, title: 'This service hasn’t been set up in Strand yet' }, 'Not available yet');
   } else {
     action = h('button', { class: 'btn small primary', onClick: async e => {
       const b = e.currentTarget; b.disabled = true;

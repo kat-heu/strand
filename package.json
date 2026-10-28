@@ -1,7 +1,7 @@
 {
   "name": "strand",
   "productName": "Strand",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "One player for Spotify, Apple Music, YouTube Music and SoundCloud \u2014 synced lyrics, visualizer, playlist import.",
   "main": "electron/main.js",
   "scripts": {

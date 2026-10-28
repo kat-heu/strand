@@ -285,6 +285,7 @@ export const hasWidevine = () => widevine !== false;
 
 export function createSpotifyRemote(ctx) {
   let st = { pos: 0, dur: 0, paused: true, at: 0 }, uri = null, poll = null, nearEnd = false, ended = false, lastPlaying = null;
+  let handed = [];                       // songs given to Spotify after the current one, so it carries on with the screen locked
 
   async function devices() { return (await spApi('/me/player/devices'))?.devices || []; }
   async function pickDevice() {
@@ -324,7 +325,14 @@ export function createSpotifyRemote(ctx) {
     const item = s.item;
     st = { pos: s.progress_ms || 0, dur: item?.duration_ms || st.dur, paused: !s.is_playing, at: performance.now() };
     if (!st.paused && st.dur && st.pos > st.dur - 4000) nearEnd = true;
-    const movedOn = uri && item && item.uri !== uri;
+    const movedOn = uri && item && item.uri !== uri && item.linked_from?.uri !== uri;
+    const step = movedOn ? handed.findIndex(x => x === item.uri || x === item.linked_from?.uri) : -1;
+    if (step >= 0) {
+      // Spotify went on to the next song in the list we gave it (e.g. while the phone was locked).
+      uri = handed[step]; handed = handed.slice(step + 1); nearEnd = false; ended = false;
+      ctx.onAdvanced(step + 1);
+      return;
+    }
     if (s.is_playing !== lastPlaying) log('spotify now ' + (s.is_playing ? 'playing' : 'paused'), { at: s.progress_ms, device: s.device?.name, same: item?.uri === uri });
     lastPlaying = s.is_playing;
     if (!ended && uri && nearEnd && (movedOn || (st.paused && st.pos < 3000))) { ended = true; ctx.onEnded(); }
@@ -339,13 +347,17 @@ export function createSpotifyRemote(ctx) {
     async load(t) {
       const { uri: u, score } = await resolveSpotifyUri(t);
       log('spotify song', { uri: u, score });
+      // Hand Spotify the songs that follow too (the run of Spotify songs right after this
+      // one), so it keeps playing in order even while iOS has Strand asleep.
+      const next = [];
+      for (const x of ctx.upcoming?.() || []) { if (!x.ids?.spotify?.startsWith('spotify:track:')) break; next.push(x.ids.spotify); }
       // Already playing this song (e.g. we just opened the Spotify app on it)? Take it over.
       let s = await spApi('/me/player').catch(() => null);
       if (!(s?.is_playing && (s.item?.uri === u || s.item?.linked_from?.uri === u))) {
         s = null;
         const device = await pickDevice();
         const tryPlay = async () => {
-          try { await spApi(`/me/player/play?device_id=${device}`, { method: 'PUT', body: JSON.stringify({ uris: [u] }) }); }
+          try { await spApi(`/me/player/play?device_id=${device}`, { method: 'PUT', body: JSON.stringify({ uris: [u, ...next] }) }); }
           catch (e) { log('spotify refused', `${e.status || ''} ${e.message}`); return null; }
           return confirmPlaying(u);
         };
@@ -369,7 +381,8 @@ export function createSpotifyRemote(ctx) {
         throw e;
       }
       wake = null;
-      uri = u; nearEnd = false; ended = false;
+      uri = u; handed = next; nearEnd = false; ended = false;
+      if (next.length) log('spotify got the next songs too', next.length);
       st = { pos: s.progress_ms || 0, dur: s.item?.duration_ms || t.durationMs || 0, paused: false, at: performance.now() };
       startPolling();
       return { score };

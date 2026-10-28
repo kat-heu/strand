@@ -54,7 +54,7 @@ const TONE = wav(30, 220);
     }
     if (P === '/me/player/devices') return J(r, { devices: [{ id: 'mac1', name: 'Work Mac', type: 'Computer', is_active: true }, { id: 'phone1', name: 'iPhone', type: 'Smartphone', is_active: false }] });
     if (P === '/me/player/play' && m === 'PUT' && sp.asleep) return J(r, { error: { status: 404, message: 'Not found.' } }, 404);
-    if (P === '/me/player/play' && m === 'PUT') { const body = r.request().postData(); if (body) { sp.playing = JSON.parse(body).uris[0]; sp.pos = 0; } sp.isPlaying = true; return r.fulfill({ status: 200, contentType: 'text/plain', body: 'dxSALWBYoZEZpqj' }); } // Spotify now answers play with a plain-text id
+    if (P === '/me/player/play' && m === 'PUT') { const body = r.request().postData(); if (body) { sp.lastUris = JSON.parse(body).uris; sp.playing = sp.lastUris[0]; sp.pos = 0; } sp.isPlaying = true; return r.fulfill({ status: 200, contentType: 'text/plain', body: 'dxSALWBYoZEZpqj' }); } // Spotify now answers play with a plain-text id
     if (P === '/me/player/pause') { sp.isPlaying = false; return J(r, null, 204); }
     if (P === '/me/player/seek') { sp.pos = +u.searchParams.get('position_ms'); return J(r, null, 204); }
     if (P === '/me/player') return J(r, { is_playing: sp.isPlaying, progress_ms: sp.pos, item: sp.playing ? { uri: sp.playing, duration_ms: 200000 } : null });
@@ -166,6 +166,16 @@ const TONE = wav(30, 220);
   await p.evaluate(() => document.dispatchEvent(new Event('visibilitychange'))); await sleep(3000);
   s = await S();
   check('Coming back to Strand: it takes over the song in the Spotify app', s.prov === 'spotifyRemote' && s.title === 'Quiet Engines', JSON.stringify(s));
+
+  // ---- Spotify keeps going through the list with the phone locked
+  sp.bodies = [];
+  await p.evaluate(() => strand.player.playQueue([0, 1, 2].map(i => ({ key: 'sq' + i, title: 'Song ' + i, artist: 'Nova Lane', durationMs: 200000, origin: 'spotify', ids: { spotify: 'spotify:track:q' + i } })), 0)); await sleep(3000);
+  const playCalls = () => sp.calls.filter(c => c.startsWith('PUT /me/player/play?device_id=')).length;
+  check('Spotify app is given the following songs too', JSON.stringify(sp.lastUris) === JSON.stringify(['spotify:track:q0', 'spotify:track:q1', 'spotify:track:q2']), JSON.stringify(sp.lastUris));
+  const before = playCalls();
+  sp.playing = 'spotify:track:q1'; sp.pos = 1000; sp.isPlaying = true; await sleep(2600);
+  s = await S();
+  check('When Spotify moves on by itself, Strand follows without restarting the song', s.idx === 1 && s.title === 'Song 1' && s.prov === 'spotifyRemote' && playCalls() === before, JSON.stringify(s));
 
   // ---- long list on a phone
   await p.evaluate(() => import('/js/store.js').then(m => { m.library.playlists.unshift({ id: 'big', name: 'Big', tracks: [...Array(3000)].map((_, i) => ({ key: 'm' + i, title: 'Track ' + i, artist: 'A', artwork: '', durationMs: 1, origin: 'catalog', ids: {} })), created: 1 }); m.saveLibrary(); }));

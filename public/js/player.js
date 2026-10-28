@@ -11,6 +11,19 @@ import { createPreview } from './providers/preview.js';
 const ctx = {
   onEnded: () => { log('song ended'); next(true); },
   onError: e => { console.warn(e); emit('toast', e.message); },
+  // Songs after the current one, in play order (empty when shuffling or repeating one
+  // song, because then Strand decides what comes next).
+  upcoming: () => (state.shuffle || state.repeat === 'one') ? [] : state.queue.slice(state.index + 1, state.index + 100),
+  // The Spotify app moved on to the next song of the list Strand handed it.
+  onAdvanced: steps => {
+    const i = state.index + steps;
+    if (i >= state.queue.length) return;
+    log('spotify app moved on by itself', state.queue[i].title);
+    const t = state.queue[i];
+    Object.assign(state, { index: i, track: t, position: 0, duration: t.durationMs || 0, error: null });
+    pushRecent(t); updateMediaSession(t);
+    emit('queue'); emit('track', t);
+  },
 };
 
 export const providers = {

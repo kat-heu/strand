@@ -21,6 +21,17 @@ One music player for **Spotify, Apple Music, YouTube Music and SoundCloud**. It 
 - Share links that open a song in Strand, or in any of the four services
 - Keyboard shortcuts and system media keys
 
+## Download
+
+| | |
+|---|---|
+| **Windows** | [**Strand-Setup.exe**](https://github.com/kat-heu/strand/releases/latest/download/Strand-Setup.exe) — installs, then updates itself |
+| **Android** | [**Strand.apk**](https://github.com/kat-heu/strand/releases/latest/download/Strand.apk) |
+| **iPhone / web** | Open **https://kat-heu.github.io/strand/** (in Safari: Settings → Install on iPhone) |
+| macOS, Linux, older versions | [All releases](https://github.com/kat-heu/strand/releases) |
+
+Windows shows "Windows protected your PC" on first launch because the installer isn't code-signed yet: click **More info** → **Run anyway**.
+
 No pure-JavaScript dependencies. The web app is plain ES modules, with no build step.
 
 ---

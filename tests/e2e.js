@@ -116,6 +116,12 @@ const MOCK_GIS = `window.google={accounts:{oauth2:{initTokenClient(c){ window.__
     if (P === '/search') return J(r, { tracks: { items: spSearchEmpty ? [] : [spt(0), spt(1)] } });
     if (P === '/me/playlists') return J(r, { items: [{ id: 'own1', name: 'My Mix', images: [], items: { total: 3 }, owner: { id: 'kati', display_name: 'Kati' } }, { id: 'ed1', name: 'Today’s Top Hits', images: [], items: { total: 50 }, owner: { id: 'spotify', display_name: 'Spotify' } }], next: null });
     if (P === '/playlists/own1') return J(r, { name: 'My Mix', images: [], items: { total: 3 } });
+    if (P === '/playlists/big1') return J(r, { name: 'Everything', images: [], items: { total: 3000 } });
+    if (P === '/playlists/big1/items') {
+      const off = +(u.searchParams.get('offset') || 0);
+      const items = [...Array(Math.min(50, 3000 - off))].map((_, k) => ({ item: { ...spt(off + k), id: 'b' + (off + k), name: 'Big ' + (off + k), uri: 'spotify:track:b' + (off + k) } }));
+      return J(r, { items, total: 3000, next: off + 50 < 3000 ? 'more' : null });
+    }
     if (P === '/playlists/own1/items') return J(r, { items: [{ item: spt(0), track: true }, { item: spt(1), track: true }, { item: { id: 'ep', type: 'episode', name: 'Podcast' }, track: false }], next: null });
     if (P === '/playlists/ed1') return J(r, { name: 'Today’s Top Hits', images: [] });
     if (P === '/playlists/ed1/items') return J(r, { error: { status: 403, message: 'Forbidden' } }, 403);
@@ -202,6 +208,33 @@ const MOCK_GIS = `window.google={accounts:{oauth2:{initTokenClient(c){ window.__
   await answer();
   check('Delete playlist', await p.evaluate(() => strand.library.playlists.length) === 0 && p.url().endsWith('#/library'));
 
+  // Very long playlist: virtualized, smooth, still fully playable
+  await p.evaluate(() => import('/js/store.js').then(m => {
+    const tracks = [...Array(5000)].map((_, i) => ({ key: 'big:' + i, title: 'Song ' + i, artist: 'Artist ' + (i % 50), album: 'Album', artwork: '', durationMs: 180000, previewUrl: 'https://audio.test/p' + (i % 5) + '.wav', origin: 'catalog', ids: {} }));
+    m.library.playlists.unshift({ id: 'huge', name: 'Huge list', tracks, created: 1 }); m.saveLibrary();
+  }));
+  const t0 = Date.now();
+  await go('#/playlist/huge', 0);
+  await p.locator('.tracks.virtual .row').first().waitFor();
+  const openMs = Date.now() - t0;
+  const domRows = await p.locator('.tracks.virtual .row').count();
+  check('5,000-song playlist opens fast', openMs < 2500, openMs + 'ms');
+  check('Only on-screen rows are drawn (not 5,000)', domRows > 5 && domRows < 120, domRows + ' rows');
+  const scrollMs = await p.evaluate(async () => {
+    const m = document.querySelector('.main'); const t = performance.now();
+    for (let y = 0; y < m.scrollHeight; y += 2500) { m.scrollTop = y; await new Promise(r => requestAnimationFrame(r)); }
+    m.scrollTop = m.scrollHeight; await new Promise(r => requestAnimationFrame(r)); await new Promise(r => requestAnimationFrame(r));
+    return performance.now() - t;
+  });
+  check('Scrolling through all of it stays smooth', scrollMs < 3000, Math.round(scrollMs) + 'ms');
+  check('Last song is reachable at the bottom', await p.locator('.row', { hasText: 'Song 4999' }).isVisible());
+  await p.locator('.row', { hasText: 'Song 4999' }).hover();
+  await p.locator('.row', { hasText: 'Song 4999' }).locator('.num button').click(); await sleep(1200);
+  s = await S();
+  check('Playing from the bottom of a huge list works', s.idx === 4999 && s.title === 'Song 4999' && s.q === 5000, JSON.stringify(s));
+  check('Row count stays small after scrolling', await p.locator('.tracks.virtual .row').count() < 120);
+  await p.evaluate(() => import('/js/store.js').then(m => { m.library.playlists = m.library.playlists.filter(x => x.id !== 'huge'); m.saveLibrary(); }));
+
   // artist + album pages
   await go('#/artist/77', 1000);
   check('Artist page', await p.locator('h1', { hasText: 'Nova Lane' }).count() === 1 && await p.locator('.row').count() >= 1);
@@ -255,7 +288,15 @@ const MOCK_GIS = `window.google={accounts:{oauth2:{initTokenClient(c){ window.__
   await go('#/me/spotify', 1500);
   await p.locator('.card', { hasText: 'My Mix' }).click(); await sleep(1200);
   check('Own playlist opens via /items (episodes skipped)', await p.locator('.row').count() === 2 && spCalls.some(c => c.includes('/playlists/own1/items')), spCalls.filter(c => c.includes('playlists')).join(' | '));
+  const before = spCalls.length;
+  await go('#/remote/spotify/playlist/big1', 0);
+  await p.locator('h1', { hasText: 'Everything' }).waitFor({ timeout: 20000 });
+  const bigCalls = spCalls.slice(before).filter(c => c.includes('/playlists/big1/items'));
+  check('3,000-song Spotify playlist loads every song', await p.locator('.sub', { hasText: '3000 songs' }).count() === 1, await p.locator('.hero .sub').first().textContent().catch(() => '?'));
+  check('…using 60 page requests', bigCalls.length === 60, bigCalls.length + ' calls');
+  check('…kept in the right order', await p.evaluate(() => [...document.querySelectorAll('.row .title')].slice(0, 3).map(e => e.textContent).join(',')) === 'Big 0,Big 1,Big 2');
   check('No calls to removed /tracks endpoint', !spCalls.some(c => /\/playlists\/[^/]+\/tracks/.test(c)));
+  await go('#/remote/spotify/playlist/own1', 1200);
   await p.getByRole('button', { name: 'Play', exact: true }).click(); await sleep(1500);
   await p.evaluate(() => window.__sp && __sp._play('spotify:track:t0', 200000)); await sleep(400); s = await S();
   check('Spotify-origin song plays on Spotify', s.prov === 'spotify' && s.playing, JSON.stringify(s));

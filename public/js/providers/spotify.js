@@ -265,6 +265,31 @@ export async function spotifyPlaylists() {
   return out;
 }
 
+// Fetch every page of a big list: the first page tells us the total, then the rest
+// are fetched 4 at a time (a 3,000-song playlist takes ~15 rounds instead of 60).
+async function pagesInParallel(path, onProgress, knownTotal) {
+  const sep = path.includes('?') ? '&' : '?';
+  const first = await spApi(`${path}${sep}limit=50&offset=0`);
+  const total = first.total ?? knownTotal ?? first.items?.length ?? 0;
+  const pages = [first];
+  let loaded = first.items?.length || 0;
+  onProgress?.(loaded, total);
+  if (!first.next || total <= 50) return pages;
+  const offsets = [];
+  for (let o = 50; o < total && o < 10000; o += 50) offsets.push(o);
+  let k = 0;
+  await Promise.all(Array.from({ length: 4 }, async () => {
+    while (k < offsets.length) {
+      const idx = k++;
+      const d = await spApi(`${path}${sep}limit=50&offset=${offsets[idx]}`);
+      pages[idx + 1] = d;
+      loaded += d.items?.length || 0;
+      onProgress?.(loaded, total);
+    }
+  }));
+  return pages.filter(Boolean);
+}
+
 export async function spotifyCollection(kind, id, onProgress) {
   if (kind === 'track') {
     const t = await spApi(`/tracks/${id}`);
@@ -282,16 +307,8 @@ export async function spotifyCollection(kind, id, onProgress) {
     return { name: a.name, artwork: a.images?.[0]?.url, tracks };
   }
   if (kind === 'liked') {
-    const tracks = [];
-    let next = '/me/tracks?limit=50', total = 0;
-    while (next) {
-      const d = await spApi(next);
-      total = d.total;
-      tracks.push(...d.items.map(i => i.track).filter(Boolean).map(spToTrack));
-      onProgress?.(tracks.length, total);
-      next = d.next;
-    }
-    return { name: 'Spotify Liked Songs', tracks };
+    const pages = await pagesInParallel('/me/tracks', onProgress);
+    return { name: 'Spotify Liked Songs', tracks: pages.flatMap(d => d.items.map(i => i.track).filter(Boolean).map(spToTrack)) };
   }
   // Spotify Web API (Feb 2026): playlist songs come from /playlists/{id}/items, each row's
   // song is in `item` (older responses used `track`), and only playlists the listener
@@ -299,16 +316,11 @@ export async function spotifyCollection(kind, id, onProgress) {
   const p = await spApi(`/playlists/${id}`);
   const total = p.items?.total ?? p.tracks?.total;
   const tracks = [];
-  let next = `/playlists/${id}/items?limit=50`;
   try {
-    while (next) {
-      const d = await spApi(next);
-      for (const row of d.items || []) {
-        const t = (row.item && typeof row.item === 'object') ? row.item : (row.track && typeof row.track === 'object') ? row.track : null;
-        if (t?.id && (!t.type || t.type === 'track')) tracks.push(spToTrack(t));
-      }
-      onProgress?.(tracks.length, total);
-      next = d.next;
+    const pages = await pagesInParallel(`/playlists/${id}/items`, onProgress, total);
+    for (const d of pages) for (const row of d.items || []) {
+      const t = (row.item && typeof row.item === 'object') ? row.item : (row.track && typeof row.track === 'object') ? row.track : null;
+      if (t?.id && (!t.type || t.type === 'track')) tracks.push(spToTrack(t));
     }
   } catch (e) {
     if (e.status === 403 || e.status === 404) {

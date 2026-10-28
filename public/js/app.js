@@ -99,10 +99,16 @@ function newPlaylist(name, tracks, extra = {}) {
 }
 
 const touch = matchMedia('(hover: none)');
+// Song lists. Long lists (playlists with thousands of songs) are "virtualized":
+// only the rows on screen (plus a small buffer) exist in the page, and they are
+// swapped as you scroll, so a 5,000-song playlist is as smooth as a 20-song one.
+const VIRTUAL_FROM = 120, ROW_H = 56, ROW_BUFFER = 12;
 function trackRows(list, { compact = false, showArt = true, numbers = false } = {}) {
   const wrap = h('div', { class: 'tracks' + (compact ? ' compact' : '') });
-  list.forEach((t, i) => {
-    const like = h('button', { class: 'icon-btn' + (isLiked(t) ? ' on' : ''), title: 'Like', html: isLiked(t) ? I.heartFill : I.heart, onClick: e => { e.stopPropagation(); toggleLike(t); like.className = 'icon-btn' + (isLiked(t) ? ' on' : ''); like.innerHTML = isLiked(t) ? I.heartFill : I.heart; } });
+  const playingKey = () => P.state.track?.key;
+  const makeRow = (t, i) => {
+    const liked = isLiked(t);
+    const like = h('button', { class: 'icon-btn' + (liked ? ' on' : ''), title: 'Like', html: liked ? I.heartFill : I.heart, onClick: e => { e.stopPropagation(); toggleLike(t); const on = isLiked(t); like.className = 'icon-btn' + (on ? ' on' : ''); like.innerHTML = on ? I.heartFill : I.heart; } });
     const more = h('button', { class: 'icon-btn', title: 'More', html: I.more, onClick: e => { e.stopPropagation(); trackMenu(more, t); } });
     const titleEl = h('div', { class: 'title' }, t.explicit ? h('span', { class: 'badge-e' }, 'E') : null, t.title);
     const artistEl = h('div', { class: 'artist' }, t.origin && t.origin !== 'catalog' ? svcDot(t.origin) : null,
@@ -118,13 +124,56 @@ function trackRows(list, { compact = false, showArt = true, numbers = false } = 
           h('div', { class: 'album' }, t.albumId && !touch.matches ? h('a', { href: `#/album/${t.albumId}`, onClick: e => e.stopPropagation() }, t.album) : t.album),
           h('div', { class: 'dur' }, t.durationMs ? fmt(t.durationMs) : ''),
           h('div', { class: 'acts' }, like, more));
+    if (t.key === playingKey()) row.classList.add('playing');
     row.addEventListener('dblclick', () => P.playQueue(list, i));
     // Touch screens have no hover/double-click: a single tap plays.
     if (compact || touch.matches) row.addEventListener('click', () => P.playQueue(list, i));
     row.addEventListener('contextmenu', e => { e.preventDefault(); trackMenu({ x: e.clientX, y: e.clientY }, t); });
-    wrap.append(row);
-  });
-  markPlaying(wrap);
+    return row;
+  };
+
+  if (compact || list.length < VIRTUAL_FROM) {
+    const frag = document.createDocumentFragment();
+    list.forEach((t, i) => frag.append(makeRow(t, i)));
+    wrap.append(frag);
+    return wrap;
+  }
+
+  // ---- virtualized list
+  wrap.classList.add('virtual');
+  wrap.style.height = list.length * ROW_H + 'px';
+  const rendered = new Map(); // index -> row element
+  let frame = 0;
+  const update = () => {
+    frame = 0;
+    if (!wrap.isConnected) return;
+    const scroller = wrap.closest('.main') || document.scrollingElement;
+    const top = wrap.getBoundingClientRect().top - (scroller === document.scrollingElement ? 0 : scroller.getBoundingClientRect().top);
+    const viewH = scroller.clientHeight || innerHeight;
+    const start = Math.max(0, Math.floor(-top / ROW_H) - ROW_BUFFER);
+    const end = Math.min(list.length, Math.ceil((viewH - top) / ROW_H) + ROW_BUFFER);
+    for (const [i, el] of rendered) if (i < start || i >= end) { el.remove(); rendered.delete(i); }
+    const frag = document.createDocumentFragment();
+    for (let i = start; i < end; i++) {
+      if (rendered.has(i)) continue;
+      const el = makeRow(list[i], i);
+      el.style.top = i * ROW_H + 'px';
+      rendered.set(i, el);
+      frag.append(el);
+    }
+    wrap.append(frag);
+  };
+  const schedule = () => { if (!frame) frame = requestAnimationFrame(update); };
+  const onScroll = () => { if (!wrap.isConnected) { stop(); return; } schedule(); };
+  const scrollTarget = main;
+  const stop = () => { scrollTarget.removeEventListener('scroll', onScroll); removeEventListener('resize', onScroll); };
+  scrollTarget.addEventListener('scroll', onScroll, { passive: true });
+  addEventListener('resize', onScroll, { passive: true });
+  // First paint once the list is in the page.
+  let tries = 0;
+  const first = () => { if (wrap.isConnected) update(); else if (tries++ < 120) requestAnimationFrame(first); };
+  requestAnimationFrame(first);
+  wrap.refresh = schedule;
   return wrap;
 }
 function markPlaying(root = document) {

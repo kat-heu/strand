@@ -294,13 +294,16 @@ export function createSpotifyRemote(ctx) {
     // so the sound doesn't come out of another device that happens to be active.
     const here = isPhone() ? /smartphone|tablet/i : /computer/i;
     log('spotify devices', ds.map(x => `${x.name} (${x.type}${x.is_active ? ', active' : ''}${x.is_restricted ? ', restricted' : ''})`));
-    let d = ds.find(x => here.test(x.type) && x.is_active) || ds.find(x => here.test(x.type)) || ds.find(x => x.is_active) || ds[0];
+    // Only ever use a Spotify app on this kind of device: music you start on the
+    // computer must not come out of your phone in your pocket (and vice versa).
+    const mine = list => list.filter(x => here.test(x.type));
+    let d = mine(ds).find(x => x.is_active) || mine(ds)[0];
     if (!d) {
       try { window.location.href = 'spotify:'; } catch {}           // open the Spotify app
-      for (let i = 0; i < 10 && !d; i++) {
+      for (let i = 0; i < (isPhone() ? 10 : 4) && !d; i++) {
         await sleep(1500);
         ds = await devices();
-        d = ds.find(x => here.test(x.type)) || ds[0];
+        d = mine(ds)[0];
       }
     }
     if (!d) throw new Error(`Open the Spotify app on this ${isPhone() ? 'phone' : 'computer'}, then press play again`);
@@ -387,7 +390,7 @@ export function createSpotifyRemote(ctx) {
       startPolling();
       return { score };
     },
-    play: () => { log('spotify app: resume'); st.paused = false; st.at = performance.now(); return spApi('/me/player/play', { method: 'PUT' }).catch(e => { log('resume failed', e.message); ctx.onError(e); }); },
+    play: () => { log('spotify app: resume'); st.paused = false; st.at = performance.now(); return spApi('/me/player/play', { method: 'PUT' }).catch(e => { log('resume failed', e.message); ctx.onError(new Error(/no active device/i.test(e.message) ? `The Spotify app on this ${isPhone() ? 'phone' : 'computer'} closed — press play on a song again` : e.message)); }); },
     pause: () => { log('spotify app: pause'); st.pos = st.paused ? st.pos : st.pos + (performance.now() - st.at); st.paused = true; return spApi('/me/player/pause', { method: 'PUT' }).catch(e => ctx.onError(e)); },
     seek: ms => { st.pos = ms; st.at = performance.now(); return spApi(`/me/player/seek?position_ms=${Math.round(ms)}`, { method: 'PUT' }).catch(() => {}); },
     setVolume: () => {},                                          // the Spotify app has its own volume

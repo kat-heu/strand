@@ -46,7 +46,7 @@ export async function spotifyLogin() {
 
 // Desktop app: log in through the system browser, then collect the code from the
 // local server (see server.js). The app window never leaves Strand.
-export const isDesktop = () => /Electron\//.test(navigator.userAgent);
+export const isDesktop = () => !!window.strandDesktop || /Electron\//.test(navigator.userAgent);
 let cancelDesktop = null;
 export const cancelSpotifyLogin = () => cancelDesktop?.();
 async function desktopLogin(authUrl, state, verifier) {

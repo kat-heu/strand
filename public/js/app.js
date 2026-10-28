@@ -562,6 +562,39 @@ views.settings = v => {
     h('header', {}, h('h3', {}, 'Linked accounts'), h('a', { class: 'btn small', href: '#/me' }, 'Open Your music')),
     h('div', { class: 'acct-grid compact' }, ORDER.map(accountTile))));
 
+  // Version & updates (desktop app)
+  if (window.strandDesktop) {
+    const D = window.strandDesktop;
+    const ver = h('span', {}, '…');
+    const stat = h('div', { class: 'status' }, '…');
+    const btn = h('button', { class: 'btn small', onClick: async () => { btn.disabled = true; try { show(await D.checkForUpdates()); } finally { btn.disabled = false; } } }, 'Check for updates');
+    const install = h('button', { class: 'btn small primary', hidden: true, onClick: () => D.installUpdate() }, 'Restart to update');
+    const show = st => {
+      if (!st) return;
+      const txt = {
+        idle: 'Waiting to check for updates',
+        dev: 'Development build — updates are off',
+        checking: 'Checking for updates…',
+        latest: 'You have the latest version',
+        downloading: `Downloading ${st.version || 'update'}… ${st.percent ? st.percent + '%' : ''}`,
+        ready: `Version ${st.version} is ready to install`,
+        error: `Couldn’t update: ${st.message || 'unknown error'}`,
+      }[st.state] || st.state;
+      const ok = st.state === 'latest' || st.state === 'ready';
+      stat.replaceChildren(h('span', { class: 'dot on', style: { background: st.state === 'error' ? '#ff4d5e' : ok ? 'var(--good)' : 'var(--muted)', color: st.state === 'error' ? '#ff4d5e' : 'var(--good)' } }), txt);
+      install.hidden = st.state !== 'ready';
+    };
+    D.getVersion().then(v => { ver.textContent = 'Strand ' + v; });
+    D.getUpdateStatus().then(show);
+    const off = D.onUpdateStatus(show);
+    const obs = new MutationObserver(() => { if (!document.body.contains(stat)) { off(); obs.disconnect(); } });
+    obs.observe(document.body, { childList: true, subtree: true });
+    s.append(h('section', { class: 'svc-card' },
+      h('header', {}, h('h3', {}, ver), stat),
+      h('p', {}, 'Strand updates itself from GitHub: it checks when it opens and every 4 hours, downloads in the background, and installs when you restart.'),
+      h('div', { class: 'inline' }, btn, install, h('button', { class: 'btn small ghost', onClick: () => D.openUpdateLog() }, 'Open update log'))));
+  }
+
   // Playback
   const pref = h('select', { class: 'input', onChange: e => { setSetting('preferred', e.target.value); toast('Saved'); } },
     [['auto', 'Automatic (best available)'], ['spotify', 'Spotify first'], ['apple', 'Apple Music first'], ['youtube', 'YouTube first'], ['preview', 'Previews only']].map(([k, l]) => h('option', { value: k, selected: settings.preferred === k }, l)));

@@ -3,6 +3,7 @@
 // stock Electron build doesn't ship. Use the castLabs "Electron for Content Security"
 // build (see README) — it exposes `components`, which we wait on below.
 const { app, BrowserWindow, shell, components } = require('electron');
+const path = require('path');
 const { start } = require('../server');
 const { setupAutoUpdates } = require('./updater');
 
@@ -26,9 +27,24 @@ async function createWindow() {
     backgroundColor: '#0c0b10',
     title: 'Strand',
     autoHideMenuBar: true,
-    webPreferences: { contextIsolation: true, sandbox: true },
+    show: false, // shown once the app has painted, so it never flashes blank
+    webPreferences: { contextIsolation: true, sandbox: true, preload: path.join(__dirname, 'preload.js') },
   });
   mainWin = win;
+  win.once('ready-to-show', () => win.show());
+  setTimeout(() => { if (!win.isDestroyed() && !win.isVisible()) win.show(); }, 10000);
+
+  // If the app page fails to load (slow start, local server not ready), retry.
+  win.webContents.on('did-fail-load', (_e, code, desc, failedUrl, isMainFrame) => {
+    if (isMainFrame && failedUrl.startsWith(url)) setTimeout(() => { if (!win.isDestroyed()) win.loadURL(url); }, 1000);
+  });
+  win.webContents.on('render-process-gone', () => { if (!win.isDestroyed()) win.loadURL(url); });
+
+  // The main window only ever shows Strand. Anything else (a login page, a link)
+  // opens in the default browser instead of replacing the app with no way back.
+  win.webContents.on('will-navigate', (e, target) => {
+    if (!target.startsWith(url)) { e.preventDefault(); shell.openExternal(target); }
+  });
 
   // Sign-in popups (Google, Apple Music) open inside the app so they can hand the
   // login back to the page; every other target=_blank link goes to the system browser.
@@ -55,8 +71,8 @@ app.whenReady().then(async () => {
       console.warn('Widevine unavailable — Spotify/Apple Music will fall back to other sources:', e.message);
     }
   }
-  await createWindow();
   setupAutoUpdates();
+  await createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });

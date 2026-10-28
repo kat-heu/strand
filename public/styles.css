@@ -465,3 +465,5 @@ body.auth-mode .app, body.auth-mode .bar { visibility: hidden; }
   .auth-card { padding: 26px 20px; }
   .stage { inset: 0; z-index: 35; }
 }
+.svc-card ol.steps { margin: 4px 0 14px; padding-left: 20px; color: var(--muted); line-height: 1.6; }
+.svc-card ol.steps b { color: var(--text, #f3f1f8); font-weight: 600; }

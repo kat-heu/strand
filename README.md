@@ -90,7 +90,7 @@ Pick a current tag from https://github.com/castlabs/electron-releases/releases. 
 
 The web version is published to **https://kat-heu.github.io/strand/** on every push to `main` (workflow `pages.yml`; one-time setup: Settings → Pages → Source: GitHub Actions).
 
-- **iPhone:** open it in Safari → Share → Add to Home Screen.
+- **iPhone:** open it in Safari → Settings → **Install on iPhone** → Download profile, then install it from the Settings app (Profile Downloaded). The profile (`public/strand.mobileconfig`, made by `scripts/make-ios-profile.py`) only adds a full-screen Home Screen icon. Share → Add to Home Screen works too.
 - **Android:** install `Strand-<version>.apk` from the latest release. It's a Trusted Web Activity (`android/`) that opens the site full-screen in Chrome, so it updates whenever the site does.
   - To sign every build with the same key, add the repository secrets `ANDROID_KEYSTORE_B64` and `ANDROID_KEYSTORE_PASSWORD` (key alias `strand`).
   - To hide Chrome's address bar, publish the `assetlinks.json` shown in the Android workflow's summary at `https://kat-heu.github.io/.well-known/assetlinks.json` (a repo named `kat-heu.github.io` with GitHub Pages on).

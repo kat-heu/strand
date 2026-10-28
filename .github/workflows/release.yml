@@ -59,7 +59,7 @@ jobs:
           - **Linux:** make the AppImage executable (`chmod +x`), then run it.
           - **Android:** open the .apk on your phone and allow "Install unknown apps" for your browser when asked.
 
-          On iPhone, open https://kat-heu.github.io/strand/ in Safari → Share → **Add to Home Screen**.
+          **iPhone:** open https://kat-heu.github.io/strand/strand.mobileconfig in Safari → **Allow**, then Settings app → **Profile Downloaded** → **Install**.
 
           Full-length Spotify and Apple Music playback in the desktop app needs the Widevine-enabled Electron build (see README). YouTube, SoundCloud and previews work out of the box.
           NOTES

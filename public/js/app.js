@@ -763,6 +763,19 @@ views.settings = v => {
       h('div', { class: 'inline' }, btn, install, h('button', { class: 'btn small ghost', onClick: () => D.openUpdateLog() }, 'Open update log'))));
   }
 
+  // iPhone / iPad: install as a Home Screen app through a profile
+  const iOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  if (iOS && !window.strandDesktop) {
+    s.append(h('section', { class: 'svc-card', id: 'ios' },
+      h('header', {}, h('h3', {}, 'Install on iPhone'), navigator.standalone ? h('span', { class: 'status' }, h('span', { class: 'dot on' }), 'Installed') : null),
+      h('p', {}, 'Adds Strand to your Home Screen as a full-screen app. It only adds the icon — no other settings change.'),
+      h('ol', { class: 'steps' },
+        h('li', {}, 'Tap ', h('b', {}, 'Download profile'), ' (in Safari), then ', h('b', {}, 'Allow'), '.'),
+        h('li', {}, 'Open the Settings app → ', h('b', {}, 'Profile Downloaded'), ' → ', h('b', {}, 'Install'), ' and enter your passcode.'),
+        h('li', {}, 'Strand appears on your Home Screen. To remove it: Settings → General → VPN & Device Management → Strand.')),
+      h('div', { class: 'inline' }, h('a', { class: 'btn small primary', href: 'strand.mobileconfig' }, 'Download profile'))));
+  }
+
   // Playback
   const pref = h('select', { class: 'input', onChange: e => { setSetting('preferred', e.target.value); toast('Saved'); } },
     [['auto', 'Automatic (best available)'], ['spotify', 'Spotify first'], ['apple', 'Apple Music first'], ['youtube', 'YouTube first'], ['preview', 'Previews only']].map(([k, l]) => h('option', { value: k, selected: settings.preferred === k }, l)));

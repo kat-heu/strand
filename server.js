@@ -15,6 +15,7 @@ const TYPES = {
   '.ico': 'image/x-icon',
   '.json': 'application/json',
   '.webmanifest': 'application/manifest+json',
+  '.mobileconfig': 'application/x-apple-aspen-config',
 };
 
 // Desktop sign-in hand-off. The desktop app opens the login page in the user's real

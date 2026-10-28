@@ -28,11 +28,14 @@ jobs:
   apk:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: 17
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platforms;android-34 build-tools;34.0.0'
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
@@ -76,7 +79,16 @@ jobs:
 
       - name: Build APK
         working-directory: android
-        run: gradle --no-daemon assembleRelease
+        run: |
+          set -o pipefail
+          if ! gradle --no-daemon --stacktrace assembleRelease 2>&1 | tee build.log; then
+            # Surface the reason as an annotation so it's visible without opening the log.
+            MSG=$(grep -A25 "What went wrong" build.log | head -40)
+            [ -n "$MSG" ] || MSG=$(tail -40 build.log)
+            MSG="${MSG//'%'/'%25'}"; MSG="${MSG//$'\n'/'%0A'}"
+            echo "::error title=Android build failed::$MSG"
+            exit 1
+          fi
 
       - name: Name the file
         run: cp android/app/build/outputs/apk/release/app-release.apk "Strand-$VERSION_NAME.apk"

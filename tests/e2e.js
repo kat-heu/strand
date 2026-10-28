@@ -95,6 +95,9 @@ const MOCK_GIS = `window.google={accounts:{oauth2:{initTokenClient(c){ window.__
   const lrc = [...Array(20)].map((_, i) => `[00:${String(i * 2).padStart(2, '0')}.00] Lyric line ${i}`).join('\n');
   await p.route('https://lrclib.net/**', r => J(r, { syncedLyrics: lrc, plainLyrics: 'x' }));
   await p.route('https://fonts.googleapis.com/**', r => r.abort());
+  // These tests cover the app itself, so run with Strand accounts switched off.
+  const cfgNoAccounts = fs.readFileSync(path.join(__dirname, '..', 'public', 'config.js'), 'utf8').replace(/supabase(Url|Key): '[^']*'/g, "supabase$1: ''");
+  await ctx.route('**/config.js', r => r.fulfill({ contentType: 'text/javascript', body: cfgNoAccounts }));
   await p.route('https://sdk.scdn.co/**', r => r.fulfill({ contentType: 'text/javascript', body: MOCK_SP_SDK }));
   await p.route('https://www.youtube.com/iframe_api', r => r.fulfill({ contentType: 'text/javascript', body: MOCK_YT }));
   await p.route('https://w.soundcloud.com/player/api.js', r => r.fulfill({ contentType: 'text/javascript', body: MOCK_SC }));
@@ -314,6 +317,7 @@ const MOCK_GIS = `window.google={accounts:{oauth2:{initTokenClient(c){ window.__
     if (url.includes('lrclib')) return r.fulfill({ json: {}, headers: { 'Access-Control-Allow-Origin': '*' } });
     return r.fulfill({ status: 404, body: '' });
   });
+  await mp.route('**/config.js', r => r.fulfill({ contentType: 'text/javascript', body: cfgNoAccounts }));
   await mp.goto(BASE + '#/album/500'); await sleep(1200);
   await mp.locator('.row').nth(1).tap(); await sleep(1500);
   const ms = await mp.evaluate(() => ({ idx: strand.player.state.index, prov: strand.player.state.provider }));

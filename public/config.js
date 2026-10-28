@@ -18,8 +18,8 @@ export default {
 
   // Strand accounts (Supabase). Project URL + publishable ("anon") key — both public.
   // Leave empty to run Strand without accounts.
-  supabaseUrl: '',
-  supabaseKey: '',
+  supabaseUrl: 'https://kfyrmrnkpjmkhhrrvevl.supabase.co',
+  supabaseKey: 'sb_publishable_dzAHwTQ4Mzutgv4yuLF2JQ_svTcrtE2',
 
   // Apple MusicKit developer token (JWT) — generate with tools/apple-token.js
   appleDevToken: '',

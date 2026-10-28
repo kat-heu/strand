@@ -15,8 +15,8 @@ android {
         applicationId 'app.strand.player'
         minSdk 21
         targetSdk 34
-        versionCode (System.getenv('VERSION_CODE') ?: '1') as int
-        versionName System.getenv('VERSION_NAME') ?: '0.0.0'
+        versionCode = Integer.parseInt(System.getenv('VERSION_CODE') ?: '1')
+        versionName = (System.getenv('VERSION_NAME') ?: '0.0.0')
 
         manifestPlaceholders = [hostName: webHost, defaultUrl: webUrl]
         resValue 'string', 'app_name', 'Strand'
@@ -26,10 +26,11 @@ android {
 
     signingConfigs {
         release {
-            storeFile file(System.getenv('KEYSTORE_FILE') ?: 'strand.keystore')
-            storePassword System.getenv('KEYSTORE_PASSWORD')
-            keyAlias System.getenv('KEY_ALIAS') ?: 'strand'
-            keyPassword System.getenv('KEY_PASSWORD') ?: System.getenv('KEYSTORE_PASSWORD')
+            def pass = System.getenv('KEYSTORE_PASSWORD') ?: ''
+            storeFile = file(System.getenv('KEYSTORE_FILE') ?: 'strand.keystore')
+            storePassword = pass
+            keyAlias = (System.getenv('KEY_ALIAS') ?: 'strand')
+            keyPassword = (System.getenv('KEY_PASSWORD') ?: pass)
         }
     }
     buildTypes {

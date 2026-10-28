@@ -27,6 +27,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
+      - name: Stamp the version (phones use it to know an update is out)
+        run: |
+          V="${GITHUB_SHA::12}"
+          echo "{\"version\":\"$V\",\"built\":\"$(date -u +%FT%TZ)\"}" > public/version.json
+          sed -i "s#src=\"js/app.js\"#src=\"js/app.js?v=$V\"#; s#href=\"styles.css\"#href=\"styles.css?v=$V\"#" public/index.html
+          cat public/version.json; grep -n "?v=" public/index.html
       - uses: actions/upload-pages-artifact@v3
         with:
           path: public

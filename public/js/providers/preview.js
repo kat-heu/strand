@@ -2,6 +2,21 @@
 // This is also the only source whose raw audio the browser lets us analyse,
 // so the visualizer is truly audio-reactive here (simulated for DRM/iframe players).
 import { match } from '../catalog.js';
+import { jsonp, matchScore } from '../util.js';
+
+// Second source of 30-second previews (Deezer's public API), used when Apple's
+// catalogue can't be reached — e.g. Apple rate-limits busy mobile networks.
+async function deezerPreview(t) {
+  const q = `artist:"${t.artist}" track:"${t.title}"`;
+  const d = await jsonp('https://api.deezer.com/search?' + new URLSearchParams({ q, limit: 8, output: 'jsonp' }));
+  let best = null, score = 0;
+  for (const r of d?.data || []) {
+    if (!r.preview) continue;
+    const sc = matchScore(t, { title: r.title, artist: r.artist?.name || '', durationMs: (r.duration || 0) * 1000 });
+    if (sc > score) { score = sc; best = r; }
+  }
+  return score >= 0.6 ? { url: best.preview, score, artwork: best.album?.cover_xl, durationMs: best.duration * 1000 } : null;
+}
 
 export function createPreview(ctx) {
   const corsAudio = new Audio();
@@ -41,11 +56,19 @@ export function createPreview(ctx) {
     async load(t) {
       let url = t.previewUrl, score = null;
       if (!url) {
-        const m = await match(t);
-        if (!m.track?.previewUrl) throw new Error('no preview found');
-        url = m.track.previewUrl; score = m.score;
-        if (!t.artwork) t.artwork = m.track.artwork;
-        if (!t.durationMs) t.durationMs = m.track.durationMs;
+        let m = null, why = null;
+        try { m = await match(t); } catch (e) { why = e; }
+        if (m?.track?.previewUrl) {
+          url = m.track.previewUrl; score = m.score;
+          if (!t.artwork) t.artwork = m.track.artwork;
+          if (!t.durationMs) t.durationMs = m.track.durationMs;
+        } else {
+          const dz = await deezerPreview(t).catch(() => null);
+          if (!dz) throw new Error(why ? 'couldn’t reach the preview catalogue' : 'no preview found');
+          url = dz.url; score = dz.score;
+          if (!t.artwork) t.artwork = dz.artwork;
+          if (!t.durationMs) t.durationMs = dz.durationMs;
+        }
       }
       try {
         audio = corsAudio;

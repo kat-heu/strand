@@ -166,6 +166,21 @@ const TONE = wav(30, 220);
   await p.evaluate(() => document.querySelector('.main').scrollTo(0, 1500)); await sleep(300);
   check('Top bar shows the playlist name after scrolling', await p.evaluate(() => document.getElementById('mtop').classList.contains('solid') && document.getElementById('mtop-title').textContent === 'Big'));
 
+  // ---- the phone version updates itself
+  let ver = 'aaa111';
+  await ctx.route('**/version.json*', r => J(r, { version: ver }));
+  const u = await ctx.newPage();
+  await u.goto(BASE); await sleep(1500);
+  await u.evaluate(() => { window.__marker = 1; });
+  await u.evaluate(() => document.dispatchEvent(new Event('visibilitychange'))); await sleep(800);
+  check('No reload when the version is unchanged', await u.evaluate(() => window.__marker === 1));
+  ver = 'bbb222';
+  await u.evaluate(() => document.dispatchEvent(new Event('visibilitychange'))); await sleep(2000);
+  check('Opening the app after an update loads the new version', await u.evaluate(() => window.__marker === undefined));
+  await u.evaluate(() => { location.hash = '#/settings'; }); await sleep(800);
+  check('Settings shows the running version', (await u.textContent('#web-version')).includes('Version bbb222'));
+  await u.close();
+
   check('No JavaScript errors', errs.length === 0, errs.join(' | '));
   const failed = results.filter(r => r[0] === 'FAIL').length;
   for (const r of results) console.log(r[0], '-', r[1], r[0] === 'FAIL' ? '→ ' + r[2] : '');

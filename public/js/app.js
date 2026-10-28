@@ -1,4 +1,5 @@
 import { h, fmt, debounce, b64urlEncode, b64urlDecode } from './util.js';
+import { startUpdates, checkForUpdate, currentVersion } from './webupdate.js';
 import { askText, askConfirm, showText } from './ui.js';
 import { I, SERVICES } from './icons.js';
 import { settings, setSetting, fromConfig, library, saveLibrary, isLiked, toggleLike, on, emit, clearCaches } from './store.js';
@@ -773,6 +774,21 @@ views.settings = v => {
       h('div', { class: 'inline' }, btn, install, h('button', { class: 'btn small ghost', onClick: () => D.openUpdateLog() }, 'Open update log'))));
   }
 
+  // Web / phone version: show which version is running and allow a manual check
+  if (!window.strandDesktop) {
+    const stat = h('div', { class: 'status' }, currentVersion() ? 'Version ' + currentVersion().slice(0, 7) : 'Updates automatically');
+    const btn = h('button', { class: 'btn small', onClick: async () => {
+      btn.disabled = true; btn.textContent = 'Checking…';
+      const r = await checkForUpdate({ manual: true });
+      btn.disabled = false; btn.textContent = 'Check for updates';
+      if (r === 'latest') toast('You have the latest version'); else if (r === 'offline') toast('Couldn’t check — are you online?');
+    } }, 'Check for updates');
+    s.append(h('section', { class: 'svc-card', id: 'web-version' },
+      h('header', {}, h('h3', {}, 'Strand'), stat),
+      h('p', {}, 'Strand updates itself: it checks for a new version whenever you open it and loads it straight away (or after your song, if music is playing).'),
+      h('div', { class: 'inline' }, btn)));
+  }
+
   // iPhone / iPad: install as a Home Screen app through a profile
   const iOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   if (iOS && !window.strandDesktop) {
@@ -1215,6 +1231,8 @@ document.addEventListener('keydown', e => {
 });
 
 // ---------------------------------------------------------------- boot
+startUpdates(() => P.state.playing);
+
 (async function boot() {
   // Strand accounts: when configured, you must sign in before using the app.
   if (cloud.cloudEnabled()) {

@@ -48,14 +48,21 @@ export function jsonp(url, timeout = 12000) {
   });
 }
 
+// Load an external script once. Every caller gets the same promise, so a second
+// caller never runs ahead while the first load is still in progress.
+const scripts = new Map();
 export function loadScript(src) {
-  return new Promise((res, rej) => {
-    if (document.querySelector(`script[src="${src}"]`)) return res();
-    const s = document.createElement('script');
-    s.src = src; s.async = true;
-    s.onload = () => res(); s.onerror = () => rej(new Error('Failed to load ' + src));
-    document.head.append(s);
-  });
+  if (!scripts.has(src)) {
+    const p = new Promise((res, rej) => {
+      const s = document.createElement('script');
+      s.src = src; s.async = true;
+      s.onload = () => res();
+      s.onerror = () => { scripts.delete(src); s.remove(); rej(new Error('Failed to load ' + src)); };
+      document.head.append(s);
+    });
+    scripts.set(src, p);
+  }
+  return scripts.get(src);
 }
 
 // ---- fuzzy matching -------------------------------------------------------

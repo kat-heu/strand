@@ -380,3 +380,10 @@ body.auth-mode .app, body.auth-mode .bar { visibility: hidden; }
 .auth-or::before, .auth-or::after { content: ''; flex: 1; border-top: 1px solid var(--line); }
 .auth-providers { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; }
 .auth-provider { justify-content: center; background: var(--bg-3); border: 1px solid var(--line); }
+
+.add-card .add-tile { border: 2px dashed var(--line); background: transparent; color: var(--muted); }
+.add-card:hover .add-tile { border-color: var(--accent); color: var(--accent); }
+
+.side-sub { display: flex; align-items: center; gap: 2px; margin: 12px 10px 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: var(--dim); }
+.side-sub .svc { width: 6px; height: 6px; }
+@media (max-width: 860px) { .side-sub { display: none; } }

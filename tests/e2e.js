@@ -249,6 +249,10 @@ const MOCK_GIS = `window.google={accounts:{oauth2:{initTokenClient(c){ window.__
   check('Spotify page: own playlist shows count', await p.locator('.card', { hasText: 'My Mix' }).locator('text=3 songs').count() === 1);
   check('Spotify page: followed playlist labelled', await p.locator('.card', { hasText: 'Today’s Top Hits' }).locator('text=Followed').count() === 1);
   check('Spotify page: recently played + top tracks', await p.locator('.me-sec', { hasText: 'Recently played' }).locator('.row').count() === 1);
+  await go('#/library', 1500);
+  check('Library shows the Spotify playlists', await p.locator('.me-sec', { hasText: 'From Spotify' }).locator('.card', { hasText: 'My Mix' }).count() === 1);
+  check('Sidebar lists Spotify playlists under a Spotify heading', await p.locator('#side-playlists .side-sub', { hasText: 'Spotify' }).count() === 1 && await p.locator('#side-playlists a', { hasText: 'My Mix' }).count() === 1);
+  await go('#/me/spotify', 1500);
   await p.locator('.card', { hasText: 'My Mix' }).click(); await sleep(1200);
   check('Own playlist opens via /items (episodes skipped)', await p.locator('.row').count() === 2 && spCalls.some(c => c.includes('/playlists/own1/items')), spCalls.filter(c => c.includes('playlists')).join(' | '));
   check('No calls to removed /tracks endpoint', !spCalls.some(c => /\/playlists\/[^/]+\/tracks/.test(c)));
@@ -284,6 +288,10 @@ const MOCK_GIS = `window.google={accounts:{oauth2:{initTokenClient(c){ window.__
   check('Liked request has no invalid videoCategoryId filter', ytLikedQuery && !ytLikedQuery.includes('videoCategoryId'), ytLikedQuery);
   await p.locator('.card', { hasText: 'Road trip' }).click(); await sleep(1500);
   check('YouTube playlist opens', await p.locator('.row').count() === 3);
+  await go('#/library', 1500);
+  check('Library shows Spotify and YouTube playlists together', await p.locator('.me-sec', { hasText: 'From YouTube Music' }).locator('.card', { hasText: 'Road trip' }).count() === 1 && await p.locator('.me-sec', { hasText: 'From Spotify' }).count() === 1);
+  await p.locator('#side-playlists a', { hasText: 'Road trip' }).click(); await sleep(1500);
+  check('Clicking a service playlist in the sidebar opens it', await p.locator('h1', { hasText: 'Road trip' }).count() === 1);
   await p.getByRole('button', { name: 'Play', exact: true }).click(); await sleep(1500); s = await S();
   check('YouTube song plays in visible player', s.prov === 'youtube' && await p.evaluate(() => getComputedStyle(document.getElementById('media-yt')).display) === 'block', JSON.stringify(s));
   await p.evaluate(() => __yt._end()); await sleep(800); s = await S();
@@ -297,7 +305,27 @@ const MOCK_GIS = `window.google={accounts:{oauth2:{initTokenClient(c){ window.__
   await answer('https://soundcloud.com/djkati/sets/whatever'); await sleep(500);
   check('SoundCloud profile linked (normalized)', await p.evaluate(() => strand.settings.scProfile) === 'https://soundcloud.com/djkati');
   await go('#/me/soundcloud', 3500);
+  await p.locator('.me-sec', { hasText: 'Your uploads' }).locator('.row').first().waitFor({ timeout: 10000 }).catch(() => {});
+  await p.locator('.me-sec', { hasText: 'Likes' }).locator('.row').first().waitFor({ timeout: 10000 }).catch(() => {});
   check('SoundCloud likes + uploads load', await p.locator('.me-sec', { hasText: 'Likes' }).locator('.row').count() === 3 && await p.locator('.me-sec', { hasText: 'Your uploads' }).locator('.row').count() === 3);
+
+  // Add a public SoundCloud playlist by link
+  check('SoundCloud page has an Add playlist card', await p.locator('.add-card', { hasText: 'Add playlist' }).count() === 1);
+  await p.locator('.add-card').click();
+  await answer('https://soundcloud.com/djkati/tracks'); await sleep(400);
+  check('Non-playlist link is rejected with a clear message', (await p.textContent('#toast')).includes('isn’t a SoundCloud playlist link'));
+  await p.locator('.add-card').click();
+  await answer('https://soundcloud.com/djkati/sets/late-night-drive?si=abc&utm_source=clipboard'); await sleep(2500);
+  check('Playlist added with a name from its link', await p.locator('.card', { hasText: 'Late Night Drive' }).count() === 1, await p.evaluate(() => JSON.stringify(strand.settings.scPlaylists)));
+  check('Saved link is cleaned (no tracking parameters)', await p.evaluate(() => strand.settings.scPlaylists[0].url) === 'https://soundcloud.com/djkati/sets/late-night-drive');
+  await p.locator('.add-card').click();
+  await answer('https://soundcloud.com/djkati/sets/late-night-drive'); await sleep(600);
+  check('Adding the same playlist twice is refused', (await p.textContent('#toast')).includes('already on your SoundCloud page') && await p.evaluate(() => strand.settings.scPlaylists.length) === 1);
+  await p.locator('.card', { hasText: 'Late Night Drive' }).click(); await sleep(1500);
+  check('Added playlist opens with its tracks', await p.locator('h1', { hasText: 'Late Night Drive' }).count() === 1 && await p.locator('.row').count() === 3);
+  await p.getByRole('button', { name: 'Remove' }).click();
+  await answer(); await sleep(800);
+  check('Remove takes it off the SoundCloud page', p.url().endsWith('#/me/soundcloud') && await p.evaluate(() => strand.settings.scPlaylists.length) === 0);
 
   // ---------- 6. Disconnect + settings
   await go('#/settings', 800);

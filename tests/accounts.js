@@ -131,6 +131,10 @@ const track = i => ({ key: 'it:' + i, title: 'Song ' + i, artist: 'Nova Lane', a
   await p.goto(BASE + '#/settings'); await sleep(500);
   check('Settings shows account + "Library synced"', (await p.locator('.svc-card').first().innerText()).includes('kat@example.com') && (await p.locator('.svc-card').first().innerText()).includes('Library synced'));
 
+  await p.evaluate(() => import('/js/store.js').then(m => m.setSetting('scPlaylists', [{ url: 'https://soundcloud.com/kat/sets/mix', name: 'Mix', art: '', count: 5 }])));
+  await sleep(2500);
+  check('Added SoundCloud playlists sync to the account', rows.get(katId)?.prefs?.scPlaylists?.[0]?.name === 'Mix');
+
   // Sign out
   await p.getByRole('button', { name: 'Sign out' }).click();
   await p.locator('.dialog .btn.primary').click(); await sleep(1200);
@@ -177,6 +181,7 @@ const track = i => ({ key: 'it:' + i, title: 'Song ' + i, artist: 'Nova Lane', a
   await q.fill('.auth-form input[type=password]', 'secret123');
   await q.click('.auth-submit'); await sleep(2500);
   check('Other device gets the synced library', await q.evaluate(() => strand.library.playlists[0]?.name === 'Kat mix' && strand.library.liked.length === 2));
+  check('Other device gets the SoundCloud playlists', await q.evaluate(() => strand.settings.scPlaylists?.[0]?.name === 'Mix'));
   check('Other device: Spotify not linked (per-device logins)', await q.locator('#conn a[title="Spotify linked"]').count() === 0);
   // edit on device B, see it on device A after a sync
   await q.evaluate(() => import('/js/store.js').then(m => { m.library.playlists.push({ id: 'plB', name: 'From laptop', tracks: [], created: 2 }); m.saveLibrary(); }));

@@ -140,6 +140,10 @@ export const ACCOUNTS = {
     profile: () => settings.scProfile && { name: settings.scProfile.split('/').pop(), note: 'Public profile' },
     warning: () => null,
     sections: [
+      { id: 'playlists', title: 'Your playlists', type: 'grid', load: async () => [
+        ...(settings.scPlaylists || []).map(p => ({ title: p.name, sub: `${p.count ? p.count + ' tracks · ' : ''}SoundCloud`, art: p.art, href: remoteHref('soundcloud', 'url', p.url) })),
+        { title: 'Add playlist', sub: 'Paste a SoundCloud playlist link', add: true, action: addSoundCloudPlaylist },
+      ] },
       { id: 'likes', title: 'Likes', type: 'tracks', href: () => remoteHref('soundcloud', 'url', settings.scProfile + '/likes'),
         load: async () => (await scResolve(settings.scProfile + '/likes')).tracks },
       { id: 'tracks', title: 'Your uploads', type: 'tracks', href: () => remoteHref('soundcloud', 'url', settings.scProfile),
@@ -148,6 +152,42 @@ export const ACCOUNTS = {
   },
 };
 export const ORDER = ['spotify', 'apple', 'youtube', 'soundcloud'];
+
+// ---------------------------------------------------------------- SoundCloud playlists by link
+// SoundCloud won't list someone's playlists without an Artist Pro developer key, so
+// listeners add each public playlist once by its link; the list syncs with their account.
+const titleFromSlug = url => decodeURIComponent(url.split('/sets/')[1]?.split(/[/?#]/)[0] || 'SoundCloud playlist')
+  .replace(/[-_]+/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+export function scPlaylistUrl(input) {
+  let u;
+  try { u = new URL(input.trim()); } catch { return null; }
+  if (!/(^|\.)soundcloud\.com$/.test(u.hostname) || !/\/sets\/[^/]+/.test(u.pathname)) return null;
+  return `https://soundcloud.com${u.pathname.replace(/\/$/, '')}`;
+}
+export const isSavedScPlaylist = url => (settings.scPlaylists || []).some(p => p.url === url);
+export async function addSoundCloudPlaylist() {
+  const input = await askText('Add a SoundCloud playlist', {
+    placeholder: 'https://soundcloud.com/name/sets/playlist-name',
+    message: 'On SoundCloud open the playlist, click Share → Copy link, and paste it here. The playlist must be public.',
+    okLabel: 'Add',
+  });
+  if (!input) return false;
+  const url = scPlaylistUrl(input);
+  if (!url) throw new Error('That isn’t a SoundCloud playlist link. It should look like soundcloud.com/name/sets/playlist-name');
+  if (isSavedScPlaylist(url)) throw new Error('That playlist is already on your SoundCloud page');
+  emit('toast', 'Checking the playlist…');
+  let res;
+  try { res = await scResolve(url); } catch { throw new Error('SoundCloud couldn’t open that playlist. Check it’s public and the link is right.'); }
+  if (!res.tracks?.length) throw new Error('That playlist is empty or private');
+  const entry = { url, name: titleFromSlug(url), art: res.tracks.find(t => t.artwork)?.artwork || '', count: res.tracks.length };
+  setSetting('scPlaylists', [...(settings.scPlaylists || []), entry]);
+  cache.set(['soundcloud', 'url', url].join('|'), Promise.resolve({ ...res, name: entry.name }));
+  emit('toast', `Added “${entry.name}”`);
+  return true;
+}
+export function removeSoundCloudPlaylist(url) {
+  setSetting('scPlaylists', (settings.scPlaylists || []).filter(p => p.url !== url));
+}
 export const anyLinked = () => ORDER.some(k => ACCOUNTS[k].linked());
 
 // ---------------------------------------------------------------- detail lists
@@ -186,7 +226,8 @@ export async function remoteCollection(svc, kind, id, onProgress) {
     }
     if (svc === 'soundcloud') {
       const r = await scResolve(id, onProgress);
-      return { ...r, name: id.endsWith('/likes') ? 'SoundCloud likes' : id.split('/').pop() };
+      const saved = (settings.scPlaylists || []).find(p => p.url === id);
+      return { ...r, name: saved?.name || (id.endsWith('/likes') ? 'SoundCloud likes' : id.includes('/sets/') ? titleFromSlug(id) : id.split('/').pop()) };
     }
     throw new Error('Unknown source');
   })();

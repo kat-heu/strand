@@ -14,7 +14,7 @@ import {
 import { appleConfigured, appleAuthorized, appleAuthorize, appleUnauthorize, appleInit } from './providers/apple.js';
 import { ytSearch, ytToTrack } from './providers/youtube.js';
 import { googleActive } from './providers/google.js';
-import { ACCOUNTS, ORDER, anyLinked, remoteCollection, clearRemoteCache } from './accounts.js';
+import { ACCOUNTS, ORDER, anyLinked, remoteCollection, clearRemoteCache, isSavedScPlaylist, removeSoundCloudPlaylist } from './accounts.js';
 import * as cloud from './cloud.js';
 
 // Spotify only allows http://127.0.0.1 loopback redirects — normalise "localhost".
@@ -345,14 +345,35 @@ views.playlist = (v, id) => {
 views.liked = v => playlistView(v, { name: 'Liked songs', tracks: library.liked }, { liked: true });
 
 views.library = v => {
-  v.append(h('div', { class: 'eyebrow' }, 'Library'), h('h1', {}, 'Your Strand library'),
+  v.append(h('div', { class: 'eyebrow' }, 'Library'), h('h1', {}, 'Your library'),
     h('div', { class: 'row-actions' },
       h('button', { class: 'btn', onClick: async () => { const n = await askText('New playlist', { value: 'My playlist', okLabel: 'Create' }); if (n) { const pl = newPlaylist(n, []); go(`#/playlist/${pl.id}`); } } }, h('span', { html: I.plus }), 'New playlist'),
       h('a', { class: 'btn ghost', href: '#/import' }, h('span', { html: I.import }), 'Import')));
-  if (!library.playlists.length && !library.liked.length) {
-    v.append(h('div', { class: 'empty' }, h('h3', {}, 'Nothing here yet'), h('div', {}, 'Like songs with the heart, or import a playlist from Spotify, Apple Music, YouTube or SoundCloud.')));
-  } else v.append(h('h2', {}, 'Playlists'), playlistGrid());
+  const linked = ORDER.filter(k => ACCOUNTS[k].linked());
+  if (!library.playlists.length && !library.liked.length && !linked.length) {
+    v.append(h('div', { class: 'empty' }, h('h3', {}, 'Nothing here yet'), h('div', {}, 'Link Spotify, YouTube Music or SoundCloud in Your music, like songs with the heart, or import a playlist.')));
+    return;
+  }
+  if (library.playlists.length || library.liked.length) v.append(h('h2', {}, 'Made in Strand'), playlistGrid());
+  // Every playlist already in the listener's connected services
+  for (const k of linked) {
+    v.append(renderSection(k, { ...ACCOUNTS[k].sections[0], load: () => accountPlaylists(k, true) }, { title: [svcDot(k), `From ${ACCOUNTS[k].label}`], more: `#/me/${k}` }));
+  }
 };
+
+// Playlists from a connected service (cached for 10 minutes, shared by the sidebar
+// and Library page so we don't call the service on every redraw).
+const accountPlCache = new Map();
+function accountPlaylists(k, withActions = false) {
+  if (!accountPlCache.has(k)) {
+    const p = ACCOUNTS[k].sections[0].load();
+    accountPlCache.set(k, p);
+    p.catch(() => accountPlCache.delete(k));
+    setTimeout(() => accountPlCache.delete(k), 10 * 60000);
+  }
+  return accountPlCache.get(k).then(items => withActions ? items : items.filter(i => !i.action));
+}
+function clearAccountPlaylists() { accountPlCache.clear(); }
 
 views.import = async v => {
   const input = h('input', { class: 'input', placeholder: 'https://open.spotify.com/playlist/…  ·  music.apple.com/…  ·  youtube.com/playlist?list=…  ·  soundcloud.com/…/sets/…' });
@@ -392,7 +413,7 @@ function accountTile(k) {
     action = h('button', { class: 'btn small ghost', onClick: async () => {
       if (!(await askConfirm(`Disconnect ${A.label}?`, { message: 'Your Strand library stays as it is.', okLabel: 'Disconnect', danger: true }))) return;
       try { await A.disconnect(); } catch (e) { toast(e.message); }
-      clearRemoteCache(); route();
+      clearRemoteCache(); clearAccountPlaylists(); route();
     } }, 'Disconnect');
   } else if (!A.configured()) {
     // Not set up by the app owner yet: no developer prompts for listeners
@@ -401,7 +422,7 @@ function accountTile(k) {
   } else {
     action = h('button', { class: 'btn small primary', onClick: async e => {
       const b = e.currentTarget; b.disabled = true;
-      try { await A.connect(); clearRemoteCache(); route(); }
+      try { await A.connect(); clearRemoteCache(); clearAccountPlaylists(); route(); }
       catch (err) { toast(err.message || 'Could not connect'); b.disabled = false; }
     } }, 'Connect');
   }
@@ -419,7 +440,7 @@ function warningBanner(k) {
   const w = ACCOUNTS[k].warning();
   if (!w) return null;
   return h('div', { class: 'warn-banner' }, h('span', {}, w.text),
-    h('button', { class: 'btn small', onClick: async () => { try { await w.run(); clearRemoteCache(); route(); } catch (e) { toast(e.message); } } }, w.action));
+    h('button', { class: 'btn small', onClick: async () => { try { await w.run(); clearRemoteCache(); clearAccountPlaylists(); route(); } catch (e) { toast(e.message); } } }, w.action));
 }
 
 async function playHref(href) {
@@ -439,6 +460,16 @@ async function playHref(href) {
 const likedTile = () => h('div', { class: 'ph', style: { background: 'linear-gradient(135deg,var(--accent),var(--accent-2))', color: '#140a07' }, html: I.heartFill.replace(/18/g, '56') });
 
 function remoteCard(it) {
+  if (it.action) {
+    const c = card({ title: it.title, sub: it.sub });
+    c.classList.add('add-card');
+    c.firstChild.replaceWith(h('div', { class: 'ph add-tile', html: I.plus.replace(/18/g, '48') }));
+    c.addEventListener('click', async e => {
+      e.preventDefault();
+      try { if (await it.action()) { clearRemoteCache(); clearAccountPlaylists(); route(); renderSide(); } } catch (err) { toast(err.message); }
+    });
+    return c;
+  }
   const playable = /^#\/(remote|album)\//.test(it.href);
   const c = card({ href: it.href, art: it.art, title: it.title, sub: it.sub, round: it.round, onPlay: playable ? () => playHref(it.href) : null });
   if (it.liked) c.firstChild.replaceWith(likedTile());
@@ -461,7 +492,7 @@ function renderSection(k, sec, { limit = Infinity, title, more } = {}) {
   }).catch(e => {
     const w = ACCOUNTS[k].warning();
     body.replaceChildren(h('div', { class: 'sec-note' }, h('span', { class: 'muted' }, e.message || 'Couldn’t load this'),
-      (e.code === 'reauth' || w) && w ? h('button', { class: 'btn small', onClick: async () => { try { await w.run(); clearRemoteCache(); route(); } catch (er) { toast(er.message); } } }, w.action) : null));
+      (e.code === 'reauth' || w) && w ? h('button', { class: 'btn small', onClick: async () => { try { await w.run(); clearRemoteCache(); clearAccountPlaylists(); route(); } catch (er) { toast(er.message); } } }, w.action) : null));
   });
   return box;
 }
@@ -477,7 +508,7 @@ views.me = (v, k) => {
         h('div', { class: 'sub' }, prof.note || ''),
         h('div', { class: 'row-actions', style: { marginTop: '6px' } },
           h('a', { class: 'btn ghost', href: '#/me' }, 'All accounts'),
-          h('button', { class: 'btn ghost', onClick: () => { clearRemoteCache(); route(); } }, 'Refresh'))));
+          h('button', { class: 'btn ghost', onClick: () => { clearRemoteCache(); clearAccountPlaylists(); route(); } }, 'Refresh'))));
     if (prof.image) hero.style.setProperty('--hero-img', `url("${prof.image}")`);
     v.append(hero);
     const w = warningBanner(k); if (w) v.append(w);
@@ -511,7 +542,7 @@ views.remote = async (v, arg) => {
     const w = ACCOUNTS[svc]?.warning();
     v.replaceChildren(h('div', { class: 'empty' }, h('h3', {}, 'Couldn’t load this'), h('div', { style: { maxWidth: '520px' } }, e.message),
       e.openUrl ? h('a', { class: 'btn', href: e.openUrl, target: '_blank', rel: 'noopener' }, 'Open in ' + (SERVICES[svc]?.label || 'app')) : null,
-      w ? h('button', { class: 'btn', onClick: async () => { try { await w.run(); clearRemoteCache(); route(); } catch (er) { toast(er.message); } } }, w.action) : null));
+      w ? h('button', { class: 'btn', onClick: async () => { try { await w.run(); clearRemoteCache(); clearAccountPlaylists(); route(); } catch (er) { toast(er.message); } } }, w.action) : null));
     return;
   }
   v.replaceChildren();
@@ -530,7 +561,10 @@ views.remote = async (v, arg) => {
         h('button', { class: 'btn primary', disabled: !tracks.length, onClick: () => P.playQueue(tracks, 0) }, h('span', { html: I.play }), 'Play'),
         h('button', { class: 'btn', disabled: !tracks.length, onClick: () => { P.state.shuffle = true; emit('state'); P.playQueue(tracks, Math.floor(Math.random() * tracks.length)); } }, h('span', { html: I.shuffle }), 'Shuffle'),
         h('button', { class: 'btn ghost', disabled: !tracks.length, onClick: () => { const pl = newPlaylist(res.name || 'Saved playlist', tracks.slice(), { source: svc, artwork: art }); toast('Saved to your Strand library'); go(`#/playlist/${pl.id}`); } }, h('span', { html: I.plus }), 'Save to library'),
-        h('button', { class: 'btn ghost', onClick: () => { clearRemoteCache(); route(); } }, 'Refresh'))));
+        h('button', { class: 'btn ghost', onClick: () => { clearRemoteCache(); clearAccountPlaylists(); route(); } }, 'Refresh'),
+        svc === 'soundcloud' && isSavedScPlaylist(id) ? h('button', { class: 'btn ghost', onClick: async () => {
+          if (await askConfirm(`Remove “${res.name}” from your SoundCloud page?`, { message: 'It stays on SoundCloud. This only removes it from Strand.', okLabel: 'Remove' })) { removeSoundCloudPlaylist(id); go('#/me/soundcloud'); }
+        } }, h('span', { html: I.trash }), 'Remove') : null)));
   if (art) hero.style.setProperty('--hero-img', `url("${art}")`);
   v.append(hero, h('div', { style: { marginTop: '20px' } }, tracks.length ? trackRows(tracks) : h('div', { class: 'empty' }, 'This list is empty.')));
 };
@@ -690,7 +724,7 @@ views.settings = v => {
     h('div', { class: 'field' }, h('label', {}, 'Store region (two-letter country code, e.g. us, gb, ae)'), country),
     field('Public web address for share links (leave blank to use this one)', 'shareBase', { placeholder: 'https://strand.example.com/' }),
     h('div', { class: 'inline' },
-      h('button', { class: 'btn ghost small', onClick: () => { clearCaches(); clearRemoteCache(); toast('Caches cleared'); } }, 'Clear caches'),
+      h('button', { class: 'btn ghost small', onClick: () => { clearCaches(); clearRemoteCache(); clearAccountPlaylists(); toast('Caches cleared'); } }, 'Clear caches'),
       h('button', { class: 'btn ghost small', onClick: () => { const blob = new Blob([JSON.stringify(library, null, 2)], { type: 'application/json' }); h('a', { href: URL.createObjectURL(blob), download: 'strand-library.json' }).click(); } }, 'Export library'))));
 
   // Developer keys
@@ -773,7 +807,19 @@ function renderSide() {
   const items = [];
   if (library.liked.length) items.push(h('a', { href: '#/liked', title: 'Liked songs' }, h('div', { class: 'ph', style: { background: 'linear-gradient(135deg,var(--accent),var(--accent-2))', color: '#140a07' }, html: I.heartFill.replace(/18/g, '14') }), h('span', { class: 'name' }, 'Liked songs')));
   library.playlists.forEach(pl => items.push(h('a', { href: `#/playlist/${pl.id}`, title: pl.name }, img(pl.artwork || pl.tracks[0]?.artwork), h('span', { class: 'name' }, pl.name))));
-  box.replaceChildren(...(items.length ? items : [h('div', { class: 'side-empty' }, 'Import or create a playlist')]));
+  const groups = ORDER.filter(k => ACCOUNTS[k].linked()).map(k => {
+    const g = h('div', { class: 'side-group' });
+    accountPlaylists(k).then(list => {
+      if (!list.length) return;
+      g.append(h('div', { class: 'side-sub' }, svcDot(k), ACCOUNTS[k].label),
+        ...list.map(it => h('a', { href: it.href, title: it.title },
+          it.liked ? h('div', { class: 'ph', style: { background: 'linear-gradient(135deg,var(--accent),var(--accent-2))', color: '#140a07' }, html: I.heartFill.replace(/18/g, '14') }) : img(it.art),
+          h('span', { class: 'name' }, it.title))));
+      g.querySelectorAll('a').forEach(a => a.classList.toggle('on', a.getAttribute('href') === location.hash));
+    }).catch(() => {});
+    return g;
+  });
+  box.replaceChildren(...(items.length || groups.length ? [...items, ...groups] : [h('div', { class: 'side-empty' }, 'Import or create a playlist')]));
   const me = cloud.currentUser();
   const chip = me ? h('a', { class: 'me-chip', href: '#/settings', title: 'Your Strand account' },
     h('span', { class: 'me-av' }, (cloud.displayName(me)[0] || '?').toUpperCase()), h('span', { class: 'me-name' }, cloud.displayName(me))) : null;
@@ -782,7 +828,7 @@ function renderSide() {
     h('span', { class: 'dot' + (ok ? ' on' : ''), style: { background: ok ? SERVICES[k].color : 'var(--dim)', color: SERVICES[k].color } }), h('span', {}, SERVICES[k].label))));
 }
 on('library', () => { renderSide(); });
-on('auth', () => { renderSide(); if (/^#\/(me|settings|import)?(\/|$)/.test(location.hash || '#/')) route(); });
+on('auth', () => { clearAccountPlaylists(); renderSide(); if (/^#\/(me|settings|import)?(\/|$)/.test(location.hash || '#/')) route(); });
 on('settings', () => renderSide());
 
 // ---------------------------------------------------------------- player bar

@@ -26,6 +26,7 @@ export const I = {
   more: f('<circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/>', 18),
   share: s('<path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7"/><path d="m16 6-4-4-4 4"/><path d="M12 2v13"/>', 18),
   chevronDown: s('<path d="m6 9 6 6 6-6"/>', 26),
+  chevronLeft: s('<path d="m15 18-6-6 6-6"/>', 26),
   close: s('<path d="M18 6 6 18"/><path d="m6 6 12 12"/>'),
   expand: s('<path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="m21 3-7 7"/><path d="m3 21 7-7"/>', 18),
   trash: s('<path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/>', 18),

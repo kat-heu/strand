@@ -35,20 +35,30 @@ function toast(msg) {
 on('toast', toast);
 
 const menu = $('menu');
-function showMenu(anchor, items) {
+function showMenu(anchor, items, head) {
   menu.replaceChildren(...items.map(it => {
     if (it === '-') return h('hr');
     if (it.group) return h('div', { class: 'sub' }, it.group.map(g => h('button', { onClick: () => { hideMenu(); g.onClick(); } }, g.label)));
     return h('button', { onClick: () => { hideMenu(); it.onClick(); } }, h('span', { html: it.icon || '' }), it.label);
   }));
   menu.hidden = false;
+  if (matchMedia('(max-width: 760px)').matches) {
+    // Phones: a bottom action sheet instead of a floating menu
+    menu.classList.add('sheet'); menu.style.left = menu.style.top = '';
+    if (head) menu.prepend(h('div', { class: 'sheet-head' }, head.art ? h('img', { src: head.art, alt: '' }) : null, h('div', {}, h('b', {}, head.title), h('span', {}, head.sub || ''))));
+    menu.prepend(h('div', { class: 'sheet-grip' }));
+    menu.append(h('button', { class: 'sheet-cancel', onClick: hideMenu }, 'Cancel'));
+    document.body.classList.add('menu-open');
+    return;
+  }
+  menu.classList.remove('sheet');
   const r = anchor.getBoundingClientRect ? anchor.getBoundingClientRect() : { left: anchor.x, top: anchor.y, bottom: anchor.y, right: anchor.x };
   const mw = menu.offsetWidth, mh = menu.offsetHeight;
   let x = Math.min(r.right - mw, innerWidth - mw - 8); x = Math.max(8, x);
   let y = r.bottom + 6; if (y + mh > innerHeight - 8) y = Math.max(8, r.top - mh - 6);
   menu.style.left = x + 'px'; menu.style.top = y + 'px';
 }
-function hideMenu() { menu.hidden = true; }
+function hideMenu() { menu.hidden = true; document.body.classList.remove('menu-open'); }
 document.addEventListener('pointerdown', e => { if (!menu.hidden && !menu.contains(e.target)) hideMenu(); });
 
 // ---------------------------------------------------------------- helpers
@@ -77,7 +87,7 @@ function trackMenu(anchor, t) {
   if (t.artistId) items.push({ label: 'Go to artist', icon: I.search, onClick: () => go(`#/artist/${t.artistId}`) });
   else items.push({ label: 'Find artist', icon: I.search, onClick: () => go(`#/search/${encodeURIComponent(t.artist)}`) });
   if (t.albumId) items.push({ label: 'Go to album', icon: I.disc.replace(/40/g, '18'), onClick: () => go(`#/album/${t.albumId}`) });
-  showMenu(anchor, items);
+  showMenu(anchor, items, { title: t.title, sub: t.artist, art: t.artwork });
 }
 function playlistPicker(anchor, t) {
   const add = pl => {
@@ -855,14 +865,39 @@ async function route() {
   document.querySelectorAll('#nav a, #tabbar a').forEach(a => a.classList.toggle('on', a.dataset.nav === name || (name === '' && a.dataset.nav === 'home')));
   closeSheet();
   document.querySelectorAll('#side-playlists a').forEach(a => a.classList.toggle('on', a.getAttribute('href') === location.hash));
-  const v = h('div', { class: 'view' });
+  const v = h('div', { class: 'view v-' + (views[name] ? name : 'home') });
   main.replaceChildren(v);
   main.scrollTop = 0;
+  setTopbar(name, arg, v);
   try { await fn(v, arg); }
   catch (e) { if (my === routeToken) v.replaceChildren(errorBox(e, route)); console.error(e); }
-  if (my === routeToken) markPlaying(main);
+  if (my === routeToken) { markPlaying(main); setTopbar(name, arg, v); }
 }
 window.addEventListener('hashchange', route);
+
+// ---------------------------------------------------------------- phone top bar
+// A compact bar that shows the page title once the big title scrolls away,
+// with a back button on pages you drill into (albums, artists, playlists…).
+const TAB_ROOTS = ['', 'home', 'search', 'me', 'library', 'settings'];
+let navDepth = 0;
+window.addEventListener('hashchange', () => { navDepth++; });
+function setTopbar(name, arg, v) {
+  const root = TAB_ROOTS.includes(name) && !(name === 'me' && arg);
+  const back = $('mtop-back');
+  back.hidden = root;
+  $('mtop-title').textContent = v.querySelector('h1')?.textContent || '';
+  document.body.classList.toggle('has-back', !root);
+  document.body.className = document.body.className.replace(/\bpg-\S+/g, '').trim() + ' pg-' + (name || 'home');
+  topbarScroll();
+}
+function topbarScroll() {
+  const h1 = main.querySelector('.view h1');
+  const solid = h1 ? h1.getBoundingClientRect().bottom < $('mtop').getBoundingClientRect().bottom + 4 : main.scrollTop > 40;
+  $('mtop').classList.toggle('solid', solid);
+}
+$('mtop-back').innerHTML = I.chevronLeft;
+$('mtop-back').onclick = () => { if (navDepth > 1 && history.length > 1) history.back(); else go('#/'); };
+main.addEventListener('scroll', topbarScroll, { passive: true });
 
 // ---------------------------------------------------------------- sidebar
 function renderTabbar() {
@@ -961,6 +996,8 @@ function sourcePill(el) {
 function drawBar() {
   const t = P.state.track;
   $('bar-art').src = t?.artwork || '';
+  document.body.classList.toggle('has-track', !!t);
+  $('panel').style.setProperty('--np-img', t?.artwork ? `url("${t.artwork}")` : 'none');
   $('bar-title').textContent = t ? t.title : 'Pick something to play';
   $('bar-artist').replaceChildren(t ? (t.artistId ? h('a', { href: `#/artist/${t.artistId}` }, t.artist) : t.artist) : '');
   $('bar-like').innerHTML = t && isLiked(t) ? I.heartFill : I.heart;

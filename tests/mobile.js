@@ -78,7 +78,19 @@ const TONE = wav(30, 220);
   }
   await p.locator('#tabbar a', { hasText: 'Search' }).tap(); await sleep(500);
   check('Tapping a tab navigates and highlights it', p.url().includes('#/search') && await p.locator('#tabbar a.on', { hasText: 'Search' }).count() === 1);
-  check('Album grid uses 2 columns', await p.evaluate(() => { location.hash = '#/'; return true; }) && (await sleep(900), await p.evaluate(() => getComputedStyle(document.querySelector('.grid')).gridTemplateColumns.split(' ').length)) === 2);
+  await p.evaluate(() => { location.hash = '#/'; }); await sleep(900);
+  check('Home shelves scroll sideways like a native app', await p.evaluate(() => { const g = document.querySelector('.v-home .grid'); return getComputedStyle(g).display === 'flex' && g.scrollWidth > g.clientWidth; }));
+  await p.evaluate(() => { location.hash = '#/library'; }); await sleep(700);
+  check('Top bar: no back button on a tab page', await p.locator('#mtop-back').isHidden());
+  await p.evaluate(() => { location.hash = '#/album/500'; }); await sleep(1000);
+  check('Top bar: back button on an album', await p.locator('#mtop-back').isVisible());
+  await p.locator('#mtop-back').tap(); await sleep(700);
+  check('Back button goes back', p.url().includes('#/library'));
+  await p.evaluate(() => { location.hash = '#/album/500'; }); await sleep(1000);
+  await p.locator('.tracks .row button[title=More]').first().tap(); await sleep(400);
+  check('Song menu opens as a bottom sheet with the song name', await p.evaluate(() => { const m = document.getElementById('menu'); const r = m.getBoundingClientRect(); return !m.hidden && m.classList.contains('sheet') && innerHeight - r.bottom < 60 && m.textContent.includes('Glass Hours'); }));
+  await p.locator('.sheet-cancel').tap(); await sleep(300);
+  check('Cancel closes the sheet', await p.evaluate(() => document.getElementById('menu').hidden && !document.body.classList.contains('menu-open')));
 
   // ---- mini player + full-screen player
   await p.evaluate(() => { location.hash = '#/album/500'; }); await sleep(1000);
@@ -115,12 +127,16 @@ const TONE = wav(30, 220);
   await p.evaluate(() => { location.hash = '#/album/500'; }); await sleep(1000);
   await p.locator('.row').nth(2).tap(); await sleep(1500);
   s = await S();
-  check('Default: Spotify-connected phone still plays inside Strand', s.prov === 'preview' && !sdkLoaded, JSON.stringify(s));
+  check('No YouTube set up: Spotify-connected phone plays the full song in the Spotify app (not a 30s preview)', s.prov === 'spotifyRemote' && !sdkLoaded && sp.calls.some(c => c.startsWith('PUT /me/player/play?device_id=phone1')), JSON.stringify(s));
   await p.locator('#bar-title').tap(); await sleep(500);
+  check('Player offers "Play in Strand instead"', await p.locator('#np-source button', { hasText: 'Play in Strand instead' }).isVisible());
+  await p.locator('#np-source button', { hasText: 'Play in Strand instead' }).tap(); await sleep(1500);
+  s = await S();
+  check('"Play in Strand instead" plays it in Strand and pauses Spotify', s.prov === 'preview' && sp.isPlaying === false, JSON.stringify(s));
   check('"Play in Spotify app" button shown in the player', await p.locator('#np-source button', { hasText: 'Play in Spotify app' }).isVisible());
   await p.locator('#np-source button', { hasText: 'Play in Spotify app' }).tap(); await sleep(2000);
   s = await S();
-  check('Song moves to the Spotify app', s.prov === 'spotifyRemote' && sp.playing === 'spotify:track:ssatelliteheart' && sp.calls.some(c => c.startsWith('PUT /me/player/play?device_id=phone1')), JSON.stringify(s) + ' ' + sp.calls.filter(c => c.includes('player')).join(','));
+  check('Song moves to the Spotify app', s.prov === 'spotifyRemote' && sp.playing === 'spotify:track:ssatelliteheart', JSON.stringify(s) + ' ' + sp.calls.filter(c => c.includes('player')).join(','));
   check('Player shows it is playing in the Spotify app', (await p.textContent('#np-source')).includes('Spotify app'));
   await p.locator('#np-play').tap(); await sleep(500);
   check('Pause in Strand pauses the Spotify app', sp.isPlaying === false && sp.calls.some(c => c.startsWith('PUT /me/player/pause')));
@@ -133,9 +149,6 @@ const TONE = wav(30, 220);
   sp.pos = 198000; await sleep(2600);
   sp.isPlaying = false; sp.pos = 0; sp.playing = 'spotify:track:other'; await sleep(4500);
   check('When the song ends in Spotify, Strand plays the next one', (await S()).idx === idxBefore + 1, JSON.stringify(await S()));
-  await p.locator('#np-source button', { hasText: 'Play in Strand instead' }).tap().catch(() => {}); await sleep(1500);
-  s = await S();
-  check('"Play in Strand instead" brings it back and pauses Spotify', s.prov === 'preview' && sp.isPlaying === false, JSON.stringify(s));
   // setting: always use the Spotify app
   await p.locator('#np-close').tap(); await sleep(300);
   await p.evaluate(() => { location.hash = '#/settings'; }); await sleep(800);
@@ -149,6 +162,9 @@ const TONE = wav(30, 220);
   await p.evaluate(() => { location.hash = '#/playlist/big'; }); await sleep(800);
   check('3,000-song playlist on a phone draws only visible rows', (await p.locator('.tracks.virtual .row').count()) < 80);
   check('…and still fits the screen', await noOverflow());
+  check('Top bar is clear at the top of a page', await p.evaluate(() => !document.getElementById('mtop').classList.contains('solid')));
+  await p.evaluate(() => document.querySelector('.main').scrollTo(0, 1500)); await sleep(300);
+  check('Top bar shows the playlist name after scrolling', await p.evaluate(() => document.getElementById('mtop').classList.contains('solid') && document.getElementById('mtop-title').textContent === 'Big'));
 
   check('No JavaScript errors', errs.length === 0, errs.join(' | '));
   const failed = results.filter(r => r[0] === 'FAIL').length;
@@ -157,4 +173,4 @@ const TONE = wav(30, 220);
   await p.evaluate(() => { location.hash = '#/'; }); await sleep(800);
   try { fs.mkdirSync(path.join(__dirname, '..', 'test-results'), { recursive: true }); await p.screenshot({ path: path.join(__dirname, '..', 'test-results', 'mobile-home.png') }); } catch {}
   await b.close(); process.exit(failed ? 1 : 0);
-})().catch(e => { for (const r of results) console.log(r[0], '-', r[1], r[0] === 'FAIL' ? '→ ' + r[2] : ''); console.error('CRASH', e.message.split('\n')[0]); process.exit(1); });
+})().catch(e => { for (const r of results) console.log(r[0], '-', r[1], r[0] === 'FAIL' ? '→ ' + r[2] : ''); console.error('CRASH', e.message.slice(0, 1500)); process.exit(1); });

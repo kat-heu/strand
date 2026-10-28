@@ -64,6 +64,7 @@ const MOCK_GIS = `window.google={accounts:{oauth2:{initTokenClient(c){ window.__
   const { start } = require(path.join(__dirname, '..', 'server.js')); await start(5173);
   const b = await chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required'] });
   const ctx = await b.newContext({ viewport: { width: 1440, height: 900 } });
+  await ctx.addInitScript(() => { navigator.requestMediaKeySystemAccess = () => Promise.resolve({}); }); // pretend this browser has Widevine, like Chrome
   const p = await ctx.newPage();
   const errs = [];
   p.on('pageerror', e => errs.push('PAGEERR ' + e.message));

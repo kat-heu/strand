@@ -37,9 +37,11 @@ export function sourceOrder(t) {
   if (t.origin === 'soundcloud') list.push('soundcloud');      // SoundCloud-only uploads rarely exist elsewhere
   if (settings.preferred !== 'auto') list.push(settings.preferred);
   if (native) list.push(native);
-  list.push(...FULL, 'soundcloud', 'preview');
+  // After the in-app players, hand the song to the Spotify app (full length, needs
+  // Premium) before falling back to 30-second previews.
+  list.push(...FULL, 'spotifyRemote', 'soundcloud', 'preview');
   // Phones: Spotify's in-page player can't run there. "Play in Spotify app" puts the
-  // remote first; otherwise Spotify songs play inside Strand via YouTube.
+  // remote first; otherwise Spotify songs play inside Strand via YouTube when possible.
   if (settings.phoneSpotify === 'app') list.unshift('spotifyRemote');
   list = [...new Set(list)];
   return list.filter(n => providers[n].available() && providers[n].canPlay(t));

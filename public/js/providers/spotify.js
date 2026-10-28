@@ -231,7 +231,7 @@ export function createSpotify(ctx) {
   return {
     name: 'spotify',
     label: 'Spotify',
-    available: () => spotifyConnected() && !isPhone(),
+    available: () => spotifyConnected() && !isPhone() && hasWidevine(),
     canPlay: () => spotifyConnected(),
     async load(t) {
       const { uri, score } = await resolveSpotifyUri(t);
@@ -263,22 +263,32 @@ export function createSpotify(ctx) {
 // Web API player endpoints (needs Premium). If the Spotify app isn't running yet,
 // Strand opens it and waits for it to appear as a device.
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+// Spotify's in-app player needs Widevine (built into Chrome, Edge and Safari, but
+// not into the desktop app's Electron). Without it, Strand drives the Spotify app instead.
+let widevine = null;
+try {
+  navigator.requestMediaKeySystemAccess?.('com.widevine.alpha', [{ initDataTypes: ['cenc'], audioCapabilities: [{ contentType: 'audio/mp4; codecs="mp4a.40.2"' }] }])
+    .then(() => { widevine = true; }, () => { widevine = false; });
+} catch { widevine = false; }
+export const hasWidevine = () => widevine !== false;
+
 export function createSpotifyRemote(ctx) {
   let st = { pos: 0, dur: 0, paused: true, at: 0 }, uri = null, poll = null, nearEnd = false, ended = false;
 
   async function devices() { return (await spApi('/me/player/devices'))?.devices || []; }
   async function pickDevice() {
     let ds = await devices();
-    let d = ds.find(x => x.is_active) || ds.find(x => /smartphone|tablet/i.test(x.type)) || ds[0];
+    const here = isPhone() ? /smartphone|tablet/i : /computer/i;
+    let d = ds.find(x => x.is_active) || ds.find(x => here.test(x.type)) || ds[0];
     if (!d) {
       try { window.location.href = 'spotify:'; } catch {}           // open the Spotify app
       for (let i = 0; i < 10 && !d; i++) {
         await sleep(1500);
         ds = await devices();
-        d = ds.find(x => /smartphone|tablet/i.test(x.type)) || ds[0];
+        d = ds.find(x => here.test(x.type)) || ds[0];
       }
     }
-    if (!d) throw new Error('Open the Spotify app on this phone, then press play again');
+    if (!d) throw new Error(`Open the Spotify app on this ${isPhone() ? 'phone' : 'computer'}, then press play again`);
     return d.id;
   }
   async function refresh() {
@@ -296,7 +306,7 @@ export function createSpotifyRemote(ctx) {
   return {
     name: 'spotifyRemote',
     label: 'Spotify app',
-    available: () => spotifyConnected() && isPhone(),
+    available: () => spotifyConnected(),
     canPlay: () => spotifyConnected(),
     async load(t) {
       const { uri: u, score } = await resolveSpotifyUri(t);
@@ -310,7 +320,7 @@ export function createSpotifyRemote(ctx) {
     play: () => { st.paused = false; st.at = performance.now(); return spApi('/me/player/play', { method: 'PUT' }).catch(e => ctx.onError(e)); },
     pause: () => { st.pos = st.paused ? st.pos : st.pos + (performance.now() - st.at); st.paused = true; return spApi('/me/player/pause', { method: 'PUT' }).catch(e => ctx.onError(e)); },
     seek: ms => { st.pos = ms; st.at = performance.now(); return spApi(`/me/player/seek?position_ms=${Math.round(ms)}`, { method: 'PUT' }).catch(() => {}); },
-    setVolume: () => {},                                          // phones: use the volume buttons
+    setVolume: () => {},                                          // the Spotify app has its own volume
     position: () => (st.paused ? st.pos : Math.min(st.dur || Infinity, st.pos + (performance.now() - st.at))),
     duration: () => st.dur,
     isPlaying: () => !st.paused,

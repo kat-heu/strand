@@ -77,6 +77,7 @@ async function playTrack(t, force = null) {
       errors.push(`${p.label}: ${e.message}`);
       log('failed ' + name, e.message);
       try { p.stop(); } catch {}
+      if (e.final) break;
     }
   }
   if (my !== loadToken) return;

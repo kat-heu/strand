@@ -266,6 +266,14 @@ export function createSpotify(ctx) {
 // Web API player endpoints (needs Premium). If the Spotify app isn't running yet,
 // Strand opens it and waits for it to appear as a device.
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+// Set when Strand had to open the sleeping Spotify app; the app retries when you return.
+let wake = null;
+export function takeSpotifyWake(key) {
+  const w = wake;
+  if (!w || w.key !== key || Date.now() - w.at > 5 * 60000) return false;
+  wake = null; return true;
+}
+
 // Spotify's in-app player needs Widevine (built into Chrome, Edge and Safari, but
 // not into the desktop app's Electron). Without it, Strand drives the Spotify app instead.
 let widevine = null;
@@ -331,17 +339,36 @@ export function createSpotifyRemote(ctx) {
     async load(t) {
       const { uri: u, score } = await resolveSpotifyUri(t);
       log('spotify song', { uri: u, score });
-      const device = await pickDevice();
-      await spApi(`/me/player/play?device_id=${device}`, { method: 'PUT', body: JSON.stringify({ uris: [u] }) });
-      let s = await confirmPlaying(u);
+      // Already playing this song (e.g. we just opened the Spotify app on it)? Take it over.
+      let s = await spApi('/me/player').catch(() => null);
+      if (!(s?.is_playing && (s.item?.uri === u || s.item?.linked_from?.uri === u))) {
+        s = null;
+        const device = await pickDevice();
+        const tryPlay = async () => {
+          try { await spApi(`/me/player/play?device_id=${device}`, { method: 'PUT', body: JSON.stringify({ uris: [u] }) }); }
+          catch (e) { log('spotify refused', `${e.status || ''} ${e.message}`); return null; }
+          return confirmPlaying(u);
+        };
+        s = await tryPlay();
+        if (!s) {
+          log('spotify did not start — transferring and retrying');
+          await spApi('/me/player', { method: 'PUT', body: JSON.stringify({ device_ids: [device], play: false }) }).catch(e => log('transfer refused', `${e.status || ''} ${e.message}`));
+          await sleep(700);
+          s = await tryPlay();
+        }
+      } else log('spotify already playing this song — taking over');
       if (!s) {
-        log('spotify did not start — transferring and retrying');
-        // Wake the device by moving playback to it, then try once more.
-        await spApi('/me/player', { method: 'PUT', body: JSON.stringify({ device_ids: [device], play: true }) }).catch(() => {});
-        await spApi(`/me/player/play?device_id=${device}`, { method: 'PUT', body: JSON.stringify({ uris: [u] }) }).catch(() => {});
-        s = await confirmPlaying(u);
+        // The phone's Spotify app is asleep (iOS suspends it in the background and
+        // Spotify then answers "Not found"). Open it on this song; when you come back,
+        // Strand picks it up and carries on as the remote.
+        wake = { key: t.key, at: Date.now() };
+        log('opening the Spotify app to wake it');
+        if (isPhone()) { try { location.href = u; } catch {} }
+        const e = new Error(isPhone() ? 'The Spotify app was asleep, so Strand opened it. Come back here and Strand takes over' : 'Open the Spotify app on this computer for a moment, then press play');
+        if (isPhone()) e.final = true;                            // don't start a preview over the Spotify app
+        throw e;
       }
-      if (!s) throw new Error(`Spotify didn’t start. Open the Spotify app on this ${isPhone() ? 'phone' : 'computer'} for a moment, then press play`);
+      wake = null;
       uri = u; nearEnd = false; ended = false;
       st = { pos: s.progress_ms || 0, dur: s.item?.duration_ms || t.durationMs || 0, paused: false, at: performance.now() };
       startPolling();

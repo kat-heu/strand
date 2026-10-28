@@ -12,7 +12,7 @@ import { startVisualizer } from './visualizer.js';
 import { parseLink, importLink } from './importer.js';
 import {
   spotifyLogin, spotifyLogout, spotifyConnected, handleSpotifyCallback, redirectUri,
-  spotifyPlaylists, spApi, playlistTotal, isPhone,
+  spotifyPlaylists, spApi, playlistTotal, isPhone, takeSpotifyWake,
 } from './providers/spotify.js';
 import { appleConfigured, appleAuthorized, appleAuthorize, appleUnauthorize, appleInit } from './providers/apple.js';
 import { ytSearch, ytToTrack } from './providers/youtube.js';
@@ -1278,6 +1278,11 @@ document.addEventListener('keydown', e => {
 
 // ---------------------------------------------------------------- boot
 startUpdates(() => P.state.playing);
+
+// Coming back after Strand opened the sleeping Spotify app: carry on with the song there.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && P.state.track && P.state.provider !== 'spotifyRemote' && takeSpotifyWake(P.state.track.key)) P.playCurrentOn('spotifyRemote');
+});
 
 
 

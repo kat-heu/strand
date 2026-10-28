@@ -1,11 +1,17 @@
 // Settings, library and a tiny event bus. Everything persists in localStorage.
 import CONFIG from '../config.js';
-const SKEY = 'strand:settings';
-const LKEY = 'strand:library';
 
 function load(k, d) {
   try { const v = JSON.parse(localStorage.getItem(k)); return v ?? d; } catch { return d; }
 }
+
+// With Strand accounts, each signed-in person gets their own storage namespace on
+// this device (library, settings, linked-service logins). Without accounts
+// (no Supabase configured) everything lives under the plain "strand:" prefix.
+export const USER_ID = (CONFIG.supabaseUrl && CONFIG.supabaseKey && load('strand:session', null)?.user?.id) || null;
+export const ns = k => (USER_ID ? `strand:u:${USER_ID}:${k}` : `strand:${k}`);
+const SKEY = ns('settings');
+const LKEY = ns('library');
 export function save(k, v) {
   try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* storage full / blocked */ }
 }

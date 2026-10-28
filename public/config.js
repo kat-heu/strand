@@ -16,6 +16,11 @@ export default {
   // still play songs via YouTube. Restrict it to your domain in Google Cloud.
   youtubeKey: '',
 
+  // Strand accounts (Supabase). Project URL + publishable ("anon") key — both public.
+  // Leave empty to run Strand without accounts.
+  supabaseUrl: '',
+  supabaseKey: '',
+
   // Apple MusicKit developer token (JWT) — generate with tools/apple-token.js
   appleDevToken: '',
 };

@@ -3,10 +3,10 @@
 // Google gives browser-only apps 1-hour tokens with no refresh token, so after an
 // hour we ask again (a quick popup, usually with no password since the user is
 // already signed in to Google).
-import { settings, load, save, emit } from '../store.js';
+import { settings, load, save, emit, ns } from '../store.js';
 import { loadScript } from '../util.js';
 
-const KEY = 'strand:google';
+const KEY = ns('google');
 const SCOPE = 'https://www.googleapis.com/auth/youtube.readonly';
 let tok = load(KEY, null);                 // { access, exp }
 export let googleProfile = load(KEY + ':me', null);

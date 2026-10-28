@@ -353,3 +353,25 @@ select.input { appearance: none; background-image: linear-gradient(45deg, transp
 .dialog p { margin: -6px 0 0; font-size: 13.5px; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .btn.primary.danger { background: #ff4d5e; color: #fff; }
+
+/* ---------- Strand accounts ---------- */
+body.auth-mode .app, body.auth-mode .bar { visibility: hidden; }
+.auth-screen { position: fixed; inset: 0; z-index: 90; display: grid; place-items: center; padding: 16px; overflow-y: auto;
+  background: radial-gradient(1200px 600px at 20% 0%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 60%),
+              radial-gradient(900px 600px at 100% 100%, color-mix(in srgb, var(--accent-2) 22%, transparent), transparent 60%), var(--bg); }
+.auth-card { width: min(420px, 100%); display: grid; gap: 14px; padding: 32px 28px; border-radius: 22px; background: color-mix(in srgb, var(--bg-2) 92%, transparent); border: 1px solid var(--line); box-shadow: 0 40px 100px rgba(0,0,0,.5); animation: rise .3s ease both; }
+.auth-brand { display: flex; align-items: center; gap: 10px; font: 800 22px/1 var(--display); margin-bottom: 6px; }
+.auth-card h1 { font-size: 30px; }
+.auth-card p { margin: -6px 0 4px; }
+.auth-form { display: grid; gap: 10px; }
+.auth-submit { justify-content: center; padding: 13px 18px; margin-top: 4px; }
+.auth-err { color: #ff6b7a; font-size: 13.5px; min-height: 0; }
+.auth-err:empty, .auth-info:empty { display: none; }
+.auth-info { font-size: 13.5px; padding: 10px 12px; border-radius: 10px; background: color-mix(in srgb, var(--good) 12%, var(--bg-3)); }
+.auth-link { color: var(--text); text-decoration: underline; font-size: 13.5px; padding: 0; justify-self: start; }
+.auth-swap { color: var(--muted); font-size: 13.5px; text-align: center; border-top: 1px solid var(--line); padding-top: 14px; }
+.me-chip { display: flex; align-items: center; gap: 9px; padding: 6px 0 8px; margin-bottom: 4px; border-bottom: 1px solid var(--line); color: var(--text); font-weight: 600; font-size: 13px; }
+.me-av { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: #140a07; font-weight: 800; font-size: 12px; flex: none; }
+.me-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.svc-card header .acct-av { width: 36px; height: 36px; font-weight: 800; color: var(--accent); }
+@media (max-width: 860px) { .me-name { display: none; } }

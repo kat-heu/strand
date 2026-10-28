@@ -15,6 +15,7 @@ import { appleConfigured, appleAuthorized, appleAuthorize, appleUnauthorize, app
 import { ytSearch, ytToTrack } from './providers/youtube.js';
 import { googleActive } from './providers/google.js';
 import { ACCOUNTS, ORDER, anyLinked, remoteCollection, clearRemoteCache } from './accounts.js';
+import * as cloud from './cloud.js';
 
 // Spotify only allows http://127.0.0.1 loopback redirects — normalise "localhost".
 if (location.hostname === 'localhost') {
@@ -544,10 +545,92 @@ views.remote = async (v, arg) => {
   v.append(hero, h('div', { style: { marginTop: '20px' } }, tracks.length ? trackRows(tracks) : h('div', { class: 'empty' }, 'This list is empty.')));
 };
 
+// ---------------------------------------------------------------- Strand accounts
+function authScreen(mode = 'signin', note = '') {
+  document.body.classList.add('auth-mode');
+  const err = h('div', { class: 'auth-err', role: 'alert' });
+  const info = h('div', { class: 'auth-info' }, note);
+  const name = h('input', { class: 'input', placeholder: 'Your name', autocomplete: 'name' });
+  const email = h('input', { class: 'input', type: 'email', placeholder: 'Email', autocomplete: 'email' });
+  const pass = h('input', { class: 'input', type: 'password', placeholder: mode === 'signup' ? 'Password (at least 6 characters)' : 'Password', autocomplete: mode === 'signup' ? 'new-password' : 'current-password' });
+  const submit = h('button', { class: 'btn primary auth-submit', type: 'submit' }, mode === 'signup' ? 'Create account' : 'Sign in');
+  const form = h('form', { class: 'auth-form', onSubmit: async e => {
+    e.preventDefault(); err.textContent = ''; info.textContent = '';
+    if (!email.value.trim() || !pass.value) { err.textContent = 'Enter your email and password.'; return; }
+    if (mode === 'signup' && pass.value.length < 6) { err.textContent = 'Use at least 6 characters for your password.'; return; }
+    submit.disabled = true; submit.textContent = mode === 'signup' ? 'Creating account…' : 'Signing in…';
+    try {
+      if (mode === 'signup') {
+        const r = await cloud.signUp(email.value.trim(), pass.value, name.value.trim());
+        if (!r.signedIn) { authScreen('signin', `Almost there! We sent a confirmation link to ${email.value.trim()}. Open it, then sign in here.`); return; }
+      } else await cloud.signIn(email.value.trim(), pass.value);
+    } catch (ex) { err.textContent = ex.message; submit.disabled = false; submit.textContent = mode === 'signup' ? 'Create account' : 'Sign in'; }
+  } },
+    mode === 'signup' ? name : null, email, pass, err, submit);
+  const forgot = mode === 'signin' ? h('button', { class: 'auth-link', type: 'button', onClick: async () => {
+    if (!email.value.trim()) { err.textContent = 'Type your email above first, then click “Forgot password?”.'; email.focus(); return; }
+    try { await cloud.sendPasswordReset(email.value.trim()); info.textContent = `If an account exists for ${email.value.trim()}, a reset link is on its way.`; }
+    catch (ex) { err.textContent = ex.message; }
+  } }, 'Forgot password?') : null;
+  const swap = h('div', { class: 'auth-swap' }, mode === 'signup' ? 'Already have an account? ' : 'New to Strand? ',
+    h('button', { class: 'auth-link', type: 'button', onClick: () => authScreen(mode === 'signup' ? 'signin' : 'signup') }, mode === 'signup' ? 'Sign in' : 'Create an account'));
+  const screen = h('div', { class: 'auth-screen' },
+    h('div', { class: 'auth-card' },
+      h('div', { class: 'auth-brand', html: document.querySelector('.brand svg').outerHTML + '<span>Strand</span>' }),
+      h('h1', {}, mode === 'signup' ? 'Create your account' : 'Welcome back'),
+      h('p', { class: 'muted' }, mode === 'signup' ? 'Your playlists, likes and linked services, on every device.' : 'Sign in to get your music.'),
+      info, form, forgot, swap));
+  document.querySelector('.auth-screen')?.remove();
+  document.body.append(screen);
+  setTimeout(() => (mode === 'signup' ? name : email).focus(), 30);
+}
+
+function resetPasswordScreen(accessToken) {
+  document.body.classList.add('auth-mode');
+  const err = h('div', { class: 'auth-err' });
+  const pass = h('input', { class: 'input', type: 'password', placeholder: 'New password (at least 6 characters)', autocomplete: 'new-password' });
+  const btn = h('button', { class: 'btn primary auth-submit', type: 'submit' }, 'Save new password');
+  document.body.append(h('div', { class: 'auth-screen' }, h('div', { class: 'auth-card' },
+    h('h1', {}, 'Choose a new password'),
+    h('form', { class: 'auth-form', onSubmit: async e => {
+      e.preventDefault();
+      if (pass.value.length < 6) { err.textContent = 'Use at least 6 characters.'; return; }
+      btn.disabled = true;
+      try { await cloud.setNewPassword(accessToken, pass.value); history.replaceState(null, '', location.pathname); document.querySelector('.auth-screen').remove(); authScreen('signin', 'Password changed. Sign in with your new password.'); }
+      catch (ex) { err.textContent = ex.message; btn.disabled = false; }
+    } }, pass, err, btn))));
+}
+
+function accountCard() {
+  const u = cloud.currentUser();
+  if (!u) return null;
+  const syncLine = h('div', { class: 'status' });
+  const showSync = st => {
+    const txt = { idle: 'Sync starting…', syncing: 'Syncing…', saving: 'Saving…', synced: 'Library synced', error: 'Sync problem: ' + (st.message || '') }[st.state] || st.state;
+    syncLine.replaceChildren(h('span', { class: 'dot on', style: { background: st.state === 'error' ? '#ff4d5e' : st.state === 'synced' ? 'var(--good)' : 'var(--muted)', color: 'var(--good)' } }), txt);
+  };
+  showSync(cloud.getSyncState());
+  const off = on('sync', showSync);
+  const obs = new MutationObserver(() => { if (!document.body.contains(syncLine)) { off(); obs.disconnect(); } });
+  obs.observe(document.body, { childList: true, subtree: true });
+  return h('section', { class: 'svc-card' },
+    h('header', {}, h('div', { class: 'acct-av', style: { '--svc': 'var(--accent)' } }, (cloud.displayName(u)[0] || '?').toUpperCase()), h('h3', {}, cloud.displayName(u)), syncLine),
+    h('p', {}, `Signed in as ${u.email}. Your playlists, likes and playback settings are saved to your account. Linked services (Spotify, SoundCloud…) are linked per device.`),
+    h('div', { class: 'inline' },
+      h('button', { class: 'btn small', onClick: async () => { const n = await askText('Your name', { value: cloud.displayName(u) === u.email ? '' : cloud.displayName(u) }); if (n) { try { await cloud.updateName(n); toast('Name updated'); route(); renderSide(); } catch (e) { toast(e.message); } } } }, 'Change name'),
+      h('button', { class: 'btn small', onClick: () => cloud.syncNow().catch(e => toast(e.message)) }, 'Sync now'),
+      h('button', { class: 'btn small ghost', onClick: async () => { if (await askConfirm('Sign out of Strand?', { okLabel: 'Sign out' })) cloud.signOut(); } }, 'Sign out'),
+      h('button', { class: 'btn small ghost', onClick: async () => {
+        if (await askConfirm('Delete your Strand account?', { message: 'This permanently deletes your account and synced library. Your Spotify and other service accounts are not affected.', okLabel: 'Delete account', danger: true }))
+          cloud.deleteAccount().catch(e => toast(e.message));
+      } }, 'Delete account')));
+}
+
 views.settings = v => {
   v.append(h('div', { class: 'eyebrow' }, 'Settings'), h('h1', {}, 'Settings'));
   const s = h('div', { class: 'settings', style: { marginTop: '24px' } });
   v.append(s);
+  const acct = accountCard(); if (acct) s.append(acct);
   const field = (label, key, opts = {}) => {
     const inp = h(opts.multiline ? 'textarea' : 'input', { class: 'input', placeholder: opts.placeholder || '', type: opts.secret ? 'password' : 'text', rows: 3, spellcheck: false });
     inp.value = settings[key] || '';
@@ -690,8 +773,11 @@ function renderSide() {
   if (library.liked.length) items.push(h('a', { href: '#/liked', title: 'Liked songs' }, h('div', { class: 'ph', style: { background: 'linear-gradient(135deg,var(--accent),var(--accent-2))', color: '#140a07' }, html: I.heartFill.replace(/18/g, '14') }), h('span', { class: 'name' }, 'Liked songs')));
   library.playlists.forEach(pl => items.push(h('a', { href: `#/playlist/${pl.id}`, title: pl.name }, img(pl.artwork || pl.tracks[0]?.artwork), h('span', { class: 'name' }, pl.name))));
   box.replaceChildren(...(items.length ? items : [h('div', { class: 'side-empty' }, 'Import or create a playlist')]));
+  const me = cloud.currentUser();
+  const chip = me ? h('a', { class: 'me-chip', href: '#/settings', title: 'Your Strand account' },
+    h('span', { class: 'me-av' }, (cloud.displayName(me)[0] || '?').toUpperCase()), h('span', { class: 'me-name' }, cloud.displayName(me))) : null;
   const st = ORDER.map(k => [k, ACCOUNTS[k].linked()]);
-  $('conn').replaceChildren(...st.map(([k, ok]) => h('a', { href: ok ? `#/me/${k}` : '#/me', title: SERVICES[k].label + (ok ? ' linked' : ' not linked') },
+  $('conn').replaceChildren(chip || '', ...st.map(([k, ok]) => h('a', { href: ok ? `#/me/${k}` : '#/me', title: SERVICES[k].label + (ok ? ' linked' : ' not linked') },
     h('span', { class: 'dot' + (ok ? ' on' : ''), style: { background: ok ? SERVICES[k].color : 'var(--dim)', color: SERVICES[k].color } }), h('span', {}, SERVICES[k].label))));
 }
 on('library', () => { renderSide(); });
@@ -936,6 +1022,15 @@ document.addEventListener('keydown', e => {
 
 // ---------------------------------------------------------------- boot
 (async function boot() {
+  // Strand accounts: when configured, you must sign in before using the app.
+  if (cloud.cloudEnabled()) {
+    const rec = cloud.recoveryFromHash();
+    if (rec) return resetPasswordScreen(rec);
+    if (!cloud.currentUser()) return authScreen(localStorage.getItem('strand:hasAccount') ? 'signin' : 'signup');
+    localStorage.setItem('strand:hasAccount', '1');
+    cloud.startSync();
+    on('remote-update', () => { renderSide(); route(); });
+  }
   renderNav(); renderSide(); drawBar(); drawPanel(); drawPanelBody(); panelLyrics.set(null);
   try {
     const me = await handleSpotifyCallback();
@@ -946,4 +1041,4 @@ document.addEventListener('keydown', e => {
 })();
 
 // expose for debugging in devtools
-window.strand = { player: P, catalog, library, settings, spApi };
+window.strand = { player: P, catalog, library, settings, spApi, cloud };

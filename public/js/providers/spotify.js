@@ -1,12 +1,12 @@
 // Spotify via the official Web Playback SDK + Web API, using PKCE login (no client secret).
 // Requirements: each listener has Spotify Premium, and while your Spotify app is in
 // "Development mode" only users you add in the Spotify dashboard can log in.
-import { settings, load, save, emit, cacheGet, cacheSet } from '../store.js';
+import { settings, load, save, emit, cacheGet, cacheSet, ns } from '../store.js';
 import { matchScore, loadScript } from '../util.js';
 
 const AUTH = 'https://accounts.spotify.com';
 const API = 'https://api.spotify.com/v1';
-const TKEY = 'strand:spotify';
+const TKEY = ns('spotify');
 const SCOPES = [
   'streaming', 'user-read-email', 'user-read-private',
   'user-read-playback-state', 'user-modify-playback-state',

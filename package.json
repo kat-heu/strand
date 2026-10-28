@@ -8,7 +8,7 @@
     "start": "node server.js",
     "desktop": "electron .",
     "dist": "electron-builder",
-    "test": "node tests/e2e.js"
+    "test": "node tests/e2e.js && node tests/accounts.js"
   },
   "devDependencies": {
     "electron": "^33.2.0",

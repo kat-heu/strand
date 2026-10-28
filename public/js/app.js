@@ -567,6 +567,17 @@ function authScreen(mode = 'signin', note = '') {
     } catch (ex) { err.textContent = ex.message; submit.disabled = false; submit.textContent = mode === 'signup' ? 'Create account' : 'Sign in'; }
   } },
     mode === 'signup' ? name : null, email, pass, err, submit);
+  const social = h('div', { class: 'auth-social' });
+  cloud.enabledProviders().then(list => {
+    if (!list.length) return;
+    social.append(h('div', { class: 'auth-or' }, h('span', {}, 'or continue with')),
+      h('div', { class: 'auth-providers' }, list.map(pv => h('button', { class: 'btn auth-provider', type: 'button', onClick: async e => {
+        const b = e.currentTarget; err.textContent = ''; b.disabled = true;
+        info.textContent = window.strandDesktop || /Electron\//.test(navigator.userAgent) ? `Finish signing in with ${cloud.PROVIDER_LABELS[pv]} in your browser…` : '';
+        try { await cloud.signInWithProvider(pv); }
+        catch (ex) { err.textContent = ex.message; info.textContent = ''; b.disabled = false; }
+      } }, cloud.PROVIDER_LABELS[pv]))));
+  });
   const forgot = mode === 'signin' ? h('button', { class: 'auth-link', type: 'button', onClick: async () => {
     if (!email.value.trim()) { err.textContent = 'Type your email above first, then click “Forgot password?”.'; email.focus(); return; }
     try { await cloud.sendPasswordReset(email.value.trim()); info.textContent = `If an account exists for ${email.value.trim()}, a reset link is on its way.`; }
@@ -579,7 +590,7 @@ function authScreen(mode = 'signin', note = '') {
       h('div', { class: 'auth-brand', html: document.querySelector('.brand svg').outerHTML + '<span>Strand</span>' }),
       h('h1', {}, mode === 'signup' ? 'Create your account' : 'Welcome back'),
       h('p', { class: 'muted' }, mode === 'signup' ? 'Your playlists, likes and linked services, on every device.' : 'Sign in to get your music.'),
-      info, form, forgot, swap));
+      info, form, social, forgot, swap));
   document.querySelector('.auth-screen')?.remove();
   document.body.append(screen);
   setTimeout(() => (mode === 'signup' ? name : email).focus(), 30);
@@ -1024,6 +1035,7 @@ document.addEventListener('keydown', e => {
 (async function boot() {
   // Strand accounts: when configured, you must sign in before using the app.
   if (cloud.cloudEnabled()) {
+    try { if (await cloud.finishProviderRedirect()) return; } catch (e) { return authScreen('signin', e.message); }
     const rec = cloud.recoveryFromHash();
     if (rec) return resetPasswordScreen(rec);
     if (!cloud.currentUser()) return authScreen(localStorage.getItem('strand:hasAccount') ? 'signin' : 'signup');

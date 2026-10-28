@@ -100,6 +100,66 @@ export async function signUp(email, password, name) {
 export async function signIn(email, password) {
   enter(await api('/auth/v1/token?grant_type=password', { method: 'POST', body: { email, password } }));
 }
+// ---------------------------------------------------------------- social sign-in
+// Google, Apple, Discord… are switched on in Supabase (Authentication → Sign In /
+// Providers). Strand asks Supabase which are on and shows a button for each.
+export const PROVIDER_LABELS = {
+  google: 'Google', apple: 'Apple', azure: 'Microsoft', discord: 'Discord', github: 'GitHub', gitlab: 'GitLab',
+  facebook: 'Facebook', twitter: 'X (Twitter)', x: 'X', spotify: 'Spotify', twitch: 'Twitch', slack_oidc: 'Slack',
+  linkedin_oidc: 'LinkedIn', notion: 'Notion', zoom: 'Zoom', bitbucket: 'Bitbucket', figma: 'Figma', kakao: 'Kakao',
+};
+export async function enabledProviders() {
+  try {
+    const d = await api('/auth/v1/settings');
+    return Object.entries(d?.external || {})
+      .filter(([k, on]) => on && !['email', 'phone', 'anonymous_users', 'web3', 'saml'].includes(k) && PROVIDER_LABELS[k])
+      .map(([k]) => k);
+  } catch { return []; }
+}
+const b64url = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const isDesktopApp = () => !!window.strandDesktop || /Electron\//.test(navigator.userAgent);
+const appBase = () => location.origin + location.pathname.replace(/[^/]*$/, '');
+
+export async function signInWithProvider(provider) {
+  const verifier = b64url(crypto.getRandomValues(new Uint8Array(48)));
+  const challenge = b64url(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier)));
+  const url = redirectTo => `${BASE}/auth/v1/authorize?` + new URLSearchParams({ provider, redirect_to: redirectTo, code_challenge: challenge, code_challenge_method: 's256' });
+  if (!isDesktopApp()) {
+    // Web: full-page redirect; boot() finishes it via finishProviderRedirect().
+    sessionStorage.setItem('sb_verifier', verifier);
+    location.href = url(appBase() + '?sb=1');
+    return new Promise(() => {});
+  }
+  // Desktop: sign in through the default browser, collect the code from the local server.
+  const state = b64url(crypto.getRandomValues(new Uint8Array(16)));
+  await fetch(`/__auth/start?state=${encodeURIComponent(state)}`, { method: 'POST' });
+  window.open(url(`${appBase()}?sb_state=${state}`), '_blank');
+  const until = Date.now() + 10 * 60000;
+  while (Date.now() < until) {
+    await new Promise(r => setTimeout(r, 1000));
+    const r = await fetch(`/__auth/result?state=${encodeURIComponent(state)}`).then(x => x.json()).catch(() => ({ pending: true }));
+    if (r.pending) continue;
+    if (r.error || !r.code) throw new Error(r.error === 'expired' ? 'Sign-in expired. Try again.' : 'Sign-in was cancelled.');
+    return exchange(r.code, verifier);
+  }
+  throw new Error('Sign-in timed out. Try again.');
+}
+async function exchange(code, verifier) {
+  enter(await api('/auth/v1/token?grant_type=pkce', { method: 'POST', body: { auth_code: code, code_verifier: verifier } }));
+}
+// Web version: returning from Google/Apple… with ?sb=1&code=…
+export async function finishProviderRedirect() {
+  const q = new URLSearchParams(location.search);
+  if (q.get('sb') !== '1') return false;
+  const code = q.get('code'), verifier = sessionStorage.getItem('sb_verifier');
+  history.replaceState(null, '', location.pathname + '#/');
+  sessionStorage.removeItem('sb_verifier');
+  if (q.get('error')) throw new Error(q.get('error_description') || 'Sign-in was cancelled.');
+  if (!code || !verifier) return false;
+  await exchange(code, verifier);
+  return true;
+}
+
 export async function sendPasswordReset(email) {
   await api('/auth/v1/recover', { method: 'POST', body: { email } });
 }

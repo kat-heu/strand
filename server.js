@@ -33,7 +33,7 @@ function start(port = Number(process.env.PORT) || 5173, host = '127.0.0.1', opts
     const srv = http.createServer((req, res) => {
       let u;
       try { u = new URL(req.url, 'http://x'); } catch { u = new URL('http://x/'); }
-      const state = u.searchParams.get('state');
+      const state = u.searchParams.get('state') || u.searchParams.get('sb_state');
       if (u.pathname === '/__auth/start' && req.method === 'POST' && state) {
         for (const [k, v] of pending) if (Date.now() - v.at > 15 * 60000) pending.delete(k);
         pending.set(state, { code: null, error: null, at: Date.now() });

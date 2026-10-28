@@ -15,6 +15,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 const users = new Map();   // email -> { id, email, password, user_metadata, confirmed }
 const tokens = new Map();  // access token -> user id
 const rows = new Map();    // user id -> row
+const authorizeCalls = [], pkce = new Map();
 let requireConfirm = false, uid = 0, clock = Date.parse('2026-01-01T00:00:00Z');
 const sessionFor = u => { const t = 'at_' + u.id + '_' + Math.random().toString(36).slice(2); tokens.set(t, u.id); return { access_token: t, refresh_token: 'rt_' + u.id, expires_in: 3600, token_type: 'bearer', user: pub(u) }; };
 const pub = u => ({ id: u.id, email: u.email, user_metadata: u.user_metadata });
@@ -24,7 +25,21 @@ async function supabase(route) {
   const req = route.request(); const u = new URL(req.url()); const body = req.postData() ? JSON.parse(req.postData()) : null;
   const auth = (req.headers()['authorization'] || '').replace('Bearer ', '');
   const me = tokens.get(auth);
+  // Social sign-in: the browser is sent to /authorize, which redirects back with a code.
+  if (u.pathname === '/auth/v1/authorize') {
+    authorizeCalls.push(u.searchParams.get('provider'));
+    const back = u.searchParams.get('redirect_to');
+    pkce.set('code_' + u.searchParams.get('provider'), u.searchParams.get('code_challenge'));
+    return route.fulfill({ status: 302, headers: { location: back + (back.includes('?') ? '&' : '?') + 'code=code_' + u.searchParams.get('provider') } });
+  }
   if (req.headers()['apikey'] !== 'pk_test') return json(route, 401, { message: 'No API key' });
+  if (u.pathname === '/auth/v1/settings') return json(route, 200, { external: { email: true, phone: false, google: true, apple: true, github: false } });
+  if (u.pathname === '/auth/v1/token' && u.searchParams.get('grant_type') === 'pkce') {
+    if (!pkce.has(body.auth_code) || !body.code_verifier) return json(route, 400, { error_description: 'invalid flow state' });
+    const email = body.auth_code.replace('code_', '') + '.user@example.com';
+    if (!users.has(email)) users.set(email, { id: 'user-' + (++uid), email, password: null, user_metadata: { name: 'Social ' + body.auth_code.replace('code_', '') }, confirmed: true });
+    return json(route, 200, sessionFor(users.get(email)));
+  }
   if (u.pathname === '/auth/v1/signup') {
     if (users.has(body.email)) return json(route, 422, { msg: 'User already registered' });
     const user = { id: 'user-' + (++uid), email: body.email, password: body.password, user_metadata: body.data || {}, confirmed: !requireConfirm };
@@ -182,6 +197,27 @@ const track = i => ({ key: 'it:' + i, title: 'Song ' + i, artist: 'Nova Lane', a
   await c.fill('.auth-form input[type=password]', 'carapass');
   await c.click('.auth-submit'); await sleep(500);
   check('Unconfirmed sign-in explains to check email', (await c.textContent('.auth-err')).includes('confirm your email'));
+
+  // Social sign-in buttons only for providers switched on in Supabase
+  requireConfirm = false;
+  const ctxD = await b.newContext(); await setup(ctxD);
+  const d = await ctxD.newPage(); d.on('pageerror', e => errs.push('PAGEERR(D) ' + e.message));
+  await d.goto(BASE); await sleep(800);
+  const provs = await d.locator('.auth-provider').allTextContents();
+  check('Shows buttons for enabled providers only', provs.join(',') === 'Google,Apple', provs.join(','));
+  // Web flow: full-page redirect and back
+  await d.locator('.auth-provider', { hasText: 'Google' }).click(); await sleep(2500);
+  check('Google sign-in (web) completes and enters the app', authorizeCalls.includes('google') && (await d.locator('.me-chip').textContent().catch(() => '')).includes('Social google'));
+  check('Address bar cleaned after sign-in', !d.url().includes('code='), d.url());
+
+  // Desktop flow: login opens in the browser, Strand picks up the result
+  const ctxE = await b.newContext({ userAgent: 'Mozilla/5.0 Strand/0.1.5 Chrome/130 Electron/33.2.0 Safari/537.36' }); await setup(ctxE);
+  const e = await ctxE.newPage(); e.on('pageerror', x => errs.push('PAGEERR(E) ' + x.message));
+  let browserTab = null; ctxE.on('page', pg => { browserTab = pg; });
+  await e.goto(BASE); await sleep(800);
+  await e.locator('.auth-provider', { hasText: 'Apple' }).click(); await sleep(4000);
+  check('Apple sign-in (desktop) opens the browser and signs in', !!browserTab && (await e.locator('.me-chip').textContent().catch(() => '')).includes('Social apple'));
+  check('Desktop app window never left Strand', e.url().startsWith(BASE));
 
   check('No JavaScript errors', errs.length === 0, errs.join(' | '));
   const failed = results.filter(r => r[0] === 'FAIL').length;

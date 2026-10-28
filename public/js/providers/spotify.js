@@ -280,8 +280,10 @@ export function createSpotifyRemote(ctx) {
   async function devices() { return (await spApi('/me/player/devices'))?.devices || []; }
   async function pickDevice() {
     let ds = await devices();
+    // Prefer the Spotify app on this kind of device (the phone you're holding),
+    // so the sound doesn't come out of another device that happens to be active.
     const here = isPhone() ? /smartphone|tablet/i : /computer/i;
-    let d = ds.find(x => x.is_active) || ds.find(x => here.test(x.type)) || ds[0];
+    let d = ds.find(x => here.test(x.type) && x.is_active) || ds.find(x => here.test(x.type)) || ds.find(x => x.is_active) || ds[0];
     if (!d) {
       try { window.location.href = 'spotify:'; } catch {}           // open the Spotify app
       for (let i = 0; i < 10 && !d; i++) {
@@ -292,6 +294,16 @@ export function createSpotifyRemote(ctx) {
     }
     if (!d) throw new Error(`Open the Spotify app on this ${isPhone() ? 'phone' : 'computer'}, then press play again`);
     return d.id;
+  }
+  // Spotify answers "OK" even when the app doesn't actually start (e.g. iOS has put
+  // it to sleep). Check that it's really playing this song before carrying on.
+  async function confirmPlaying(u) {
+    for (let i = 0; i < 4; i++) {
+      await sleep(900);
+      const s = await spApi('/me/player').catch(() => null);
+      if (s?.is_playing && (!s.item || s.item.uri === u || s.item.linked_from?.uri === u || (s.progress_ms || 0) > 0)) return s;
+    }
+    return null;
   }
   async function refresh() {
     let s;
@@ -314,8 +326,16 @@ export function createSpotifyRemote(ctx) {
       const { uri: u, score } = await resolveSpotifyUri(t);
       const device = await pickDevice();
       await spApi(`/me/player/play?device_id=${device}`, { method: 'PUT', body: JSON.stringify({ uris: [u] }) });
+      let s = await confirmPlaying(u);
+      if (!s) {
+        // Wake the device by moving playback to it, then try once more.
+        await spApi('/me/player', { method: 'PUT', body: JSON.stringify({ device_ids: [device], play: true }) }).catch(() => {});
+        await spApi(`/me/player/play?device_id=${device}`, { method: 'PUT', body: JSON.stringify({ uris: [u] }) }).catch(() => {});
+        s = await confirmPlaying(u);
+      }
+      if (!s) throw new Error(`Spotify didn’t start. Open the Spotify app on this ${isPhone() ? 'phone' : 'computer'} for a moment, then press play`);
       uri = u; nearEnd = false; ended = false;
-      st = { pos: 0, dur: t.durationMs || 0, paused: false, at: performance.now() };
+      st = { pos: s.progress_ms || 0, dur: s.item?.duration_ms || t.durationMs || 0, paused: false, at: performance.now() };
       startPolling();
       return { score };
     },

@@ -889,7 +889,7 @@ async function connectionCheck(box, btn) {
     ['Screen', async () => {
       const cs = getComputedStyle(document.documentElement), probe = h('div', { style: { position: 'fixed', bottom: '0', height: '1px', paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' } });
       document.body.append(probe); const ps = getComputedStyle(probe); const box = probe.getBoundingClientRect(); probe.remove();
-      return `${innerWidth}×${innerHeight} · screen ${screen.width}×${screen.height} · view ${Math.round(visualViewport?.height || 0)} · doc ${document.documentElement.clientHeight} · fixed-bottom ${Math.round(box.bottom)} · safe ${ps.paddingTop}/${ps.paddingBottom} · gap ${cs.getPropertyValue('--vgap')} · ${navigator.standalone ? 'home-screen app' : 'browser'}`;
+      return `${innerWidth}×${innerHeight} · screen ${screen.width}×${screen.height} · view ${Math.round(visualViewport?.height || 0)} · doc ${document.documentElement.clientHeight} · fixed-bottom ${Math.round(box.bottom)} · safe ${ps.paddingTop}/${ps.paddingBottom} · ${navigator.standalone ? 'home-screen app' : 'browser'}`;
     }],
     ['YouTube', async () => { if (settings.youtubeKey || googleActive()) return 'ready'; throw new Error('not set up (needs a YouTube API key or Google sign-in)'); }],
   ];
@@ -1266,22 +1266,7 @@ document.addEventListener('keydown', e => {
 // ---------------------------------------------------------------- boot
 startUpdates(() => P.state.playing);
 
-// Some iPhone versions give Home Screen apps a page that stops short of the bottom
-// of the screen, which left a strip under the tab bar. Measure how far the page
-// falls short and let the bottom bars reach the real screen edge.
-function fitScreen() {
-  const standalone = navigator.standalone || matchMedia('(display-mode: standalone), (display-mode: fullscreen)').matches;
-  let gap = 0;
-  if (standalone && /iPhone|iPad|iPod/.test(navigator.userAgent)) {
-    const portrait = innerHeight > innerWidth;
-    const full = portrait ? Math.max(screen.height, screen.width) : Math.min(screen.height, screen.width);
-    gap = Math.max(0, Math.min(90, full - innerHeight));
-  }
-  document.documentElement.style.setProperty('--vgap', gap + 'px');
-}
-fitScreen();
-addEventListener('resize', fitScreen);
-addEventListener('orientationchange', () => setTimeout(fitScreen, 300));
+
 
 (async function boot() {
   // Strand accounts: when configured, you must sign in before using the app.

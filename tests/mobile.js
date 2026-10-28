@@ -41,7 +41,7 @@ const TONE = wav(30, 220);
   let sdkLoaded = false;
   await ctx.route('https://sdk.scdn.co/**', r => { sdkLoaded = true; r.fulfill({ body: '' }); });
   // Spotify Web API with a phone running the Spotify app
-  const sp = { calls: [], playing: null, pos: 0, isPlaying: false };
+  const sp = { calls: [], playing: null, pos: 0, isPlaying: false, asleep: false };
   const spt = i => ({ id: 's' + i, name: ['Glass Hours', 'Neon Rivers', 'Satellite Heart'][i % 3], uri: 'spotify:track:s' + i, duration_ms: 200000, artists: [{ name: 'Nova Lane' }], album: { name: 'Night Drive', images: [] }, external_ids: {} });
   await ctx.route('https://api.spotify.com/**', r => {
     const u = new URL(r.request().url()); const P = u.pathname.replace('/v1', ''); const m = r.request().method();
@@ -52,8 +52,8 @@ const TONE = wav(30, 220);
       const id = 's' + title.toLowerCase().replace(/\W+/g, '');
       return J(r, { tracks: { items: [{ ...spt(0), id, name: title, uri: 'spotify:track:' + id }] } });
     }
-    if (P === '/me/player/devices') return J(r, { devices: [{ id: 'phone1', name: 'iPhone', type: 'Smartphone', is_active: false }] });
-    if (P === '/me/player/play' && m === 'PUT') { const body = r.request().postData(); if (body) { sp.playing = JSON.parse(body).uris[0]; sp.pos = 0; } sp.isPlaying = true; return r.fulfill({ status: 200, contentType: 'text/plain', body: 'dxSALWBYoZEZpqj' }); } // Spotify now answers play with a plain-text id
+    if (P === '/me/player/devices') return J(r, { devices: [{ id: 'mac1', name: 'Work Mac', type: 'Computer', is_active: true }, { id: 'phone1', name: 'iPhone', type: 'Smartphone', is_active: false }] });
+    if (P === '/me/player/play' && m === 'PUT') { const body = r.request().postData(); if (body) { sp.playing = JSON.parse(body).uris[0]; sp.pos = 0; } sp.isPlaying = !sp.asleep; return r.fulfill({ status: 200, contentType: 'text/plain', body: 'dxSALWBYoZEZpqj' }); } // Spotify now answers play with a plain-text id
     if (P === '/me/player/pause') { sp.isPlaying = false; return J(r, null, 204); }
     if (P === '/me/player/seek') { sp.pos = +u.searchParams.get('position_ms'); return J(r, null, 204); }
     if (P === '/me/player') return J(r, { is_playing: sp.isPlaying, progress_ms: sp.pos, item: sp.playing ? { uri: sp.playing, duration_ms: 200000 } : null });
@@ -156,6 +156,12 @@ const TONE = wav(30, 220);
   await p.evaluate(() => { location.hash = '#/album/500'; }); await sleep(1000);
   await p.locator('.row').nth(1).tap(); await sleep(2000);
   check('Setting "In the Spotify app" plays there straight away', (await S()).prov === 'spotifyRemote');
+  check('Sound goes to the phone, not another active device', sp.calls.filter(c => c.startsWith('PUT /me/player/play?device_id=')).every(c => c.includes('phone1')));
+  sp.asleep = true;
+  await p.locator('.row').nth(3).tap(); await sleep(11000);
+  s = await S();
+  check('If the Spotify app doesn’t actually start, Strand says so and plays in Strand instead', s.prov === 'preview', JSON.stringify(s));
+  sp.asleep = false;
 
   // ---- long list on a phone
   await p.evaluate(() => import('/js/store.js').then(m => { m.library.playlists.unshift({ id: 'big', name: 'Big', tracks: [...Array(3000)].map((_, i) => ({ key: 'm' + i, title: 'Track ' + i, artist: 'A', artwork: '', durationMs: 1, origin: 'catalog', ids: {} })), created: 1 }); m.saveLibrary(); }));

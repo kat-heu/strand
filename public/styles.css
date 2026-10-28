@@ -594,16 +594,8 @@ body.auth-mode .app, body.auth-mode .bar { visibility: hidden; }
 }
 .update-banner { position: fixed; left: 50%; transform: translateX(-50%); top: calc(env(safe-area-inset-top, 0px) + 10px); z-index: 70; display: flex; align-items: center; gap: 12px; padding: 8px 8px 8px 16px; border-radius: 14px; background: #24222f; border: 1px solid var(--line); box-shadow: 0 14px 40px rgba(0,0,0,.5); font-size: 14px; font-weight: 500; white-space: nowrap; animation: rise .25s ease both; }
 
-/* =================================================================== phones: fit the real screen + library as a list */
-:root { --vgap: 0px; }
+/* =================================================================== phones: library as a list */
 @media (max-width: 760px) {
-  .app { height: calc(100dvh + var(--vgap) - var(--tab-h) - var(--safe-b)); }
-  .tabbar { bottom: calc(-1 * var(--vgap)); }
-  .bar { bottom: calc(var(--tab-h) + var(--safe-b) + 6px - var(--vgap)); }
-  .panel { bottom: calc(-1 * var(--vgap)); }
-  .menu.sheet { bottom: calc(8px + var(--safe-b) - var(--vgap)); }
-  .toast { bottom: calc(var(--tab-h) + var(--mini-h) + var(--safe-b) + 18px - var(--vgap)); }
-
   /* Library: a list with small covers, like the Library tab in music apps */
   .v-library .grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; }
   .v-library .card { display: grid; grid-template-columns: 58px minmax(0, 1fr); grid-template-rows: auto auto; column-gap: 14px; align-content: center; padding: 6px 0; min-height: 70px; }

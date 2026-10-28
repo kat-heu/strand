@@ -1,6 +1,7 @@
 import { h, fmt, debounce, b64urlEncode, b64urlDecode, jsonp } from './util.js';
 const songs = n => `${n.toLocaleString()} song${n === 1 ? '' : 's'}`;
 import { startUpdates, checkForUpdate, currentVersion } from './webupdate.js';
+import { logLines, clearLog } from './log.js';
 import { askText, askConfirm, showText } from './ui.js';
 import { I, SERVICES } from './icons.js';
 import { settings, setSetting, fromConfig, library, saveLibrary, isLiked, toggleLike, on, emit, clearCaches } from './store.js';
@@ -791,6 +792,18 @@ views.settings = v => {
       h('header', {}, h('h3', {}, 'Strand'), stat),
       h('p', {}, 'Strand updates itself: it checks for a new version whenever you open it and loads it straight away (or after your song, if music is playing).'),
       h('div', { class: 'inline' }, btn, run), diag));
+  }
+
+  // Playback log (for diagnosing playback problems)
+  {
+    const pre = h('pre', { class: 'playlog selectable' }, logLines().slice(-60).join('\n') || 'Nothing logged yet — play a song, then come back here.');
+    s.append(h('section', { class: 'svc-card', id: 'playlog' },
+      h('header', {}, h('h3', {}, 'Playback log'), h('span', { class: 'status' }, 'Song names and devices only')),
+      h('p', {}, 'If a song won’t play, try it once, then copy this and send it over.'),
+      pre,
+      h('div', { class: 'inline' },
+        h('button', { class: 'btn small', onClick: () => copy(logLines().join('\n'), 'Log copied') }, 'Copy log'),
+        h('button', { class: 'btn small ghost', onClick: () => { clearLog(); pre.textContent = 'Cleared.'; } }, 'Clear'))));
   }
 
   // iPhone / iPad: install as a Home Screen app through a profile

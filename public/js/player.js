@@ -1,6 +1,7 @@
 // One queue, many sources. For each track we try sources in preference order and
 // fall back automatically (e.g. Spotify → Apple Music → YouTube → 30s preview).
 import { settings, setSetting, emit, pushRecent } from './store.js';
+import { log } from './log.js';
 import { createSpotify, createSpotifyRemote } from './providers/spotify.js';
 import { createApple } from './providers/apple.js';
 import { createYouTube } from './providers/youtube.js';
@@ -8,7 +9,7 @@ import { createSoundCloud } from './providers/soundcloud.js';
 import { createPreview } from './providers/preview.js';
 
 const ctx = {
-  onEnded: () => next(true),
+  onEnded: () => { log('song ended'); next(true); },
   onError: e => { console.warn(e); emit('toast', e.message); },
 };
 
@@ -56,6 +57,7 @@ async function playTrack(t, force = null) {
   emit('track', t);
   const errors = [];
   const order = force ? [force, ...sourceOrder(t).filter(n => n !== force)] : sourceOrder(t);
+  log('play', { song: t.title + ' — ' + t.artist, origin: t.origin, order });
   for (const name of order) {
     const p = providers[name];
     state.trying = name; emit('trying', name);
@@ -64,6 +66,7 @@ async function playTrack(t, force = null) {
       if (my !== loadToken) { try { p.stop(); } catch {} return; }
       p.setVolume(settings.volume);
       Object.assign(state, { provider: name, score: score ?? null, loading: false, playing: true, trying: null });
+      log('playing via ' + name);
       pushRecent(t);
       updateMediaSession(t);
       emit('track', t);
@@ -72,6 +75,7 @@ async function playTrack(t, force = null) {
       if (my !== loadToken) return;
       console.warn(`[${name}]`, e);
       errors.push(`${p.label}: ${e.message}`);
+      log('failed ' + name, e.message);
       try { p.stop(); } catch {}
     }
   }

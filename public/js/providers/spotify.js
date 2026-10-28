@@ -2,6 +2,7 @@
 // Requirements: each listener has Spotify Premium, and while your Spotify app is in
 // "Development mode" only users you add in the Spotify dashboard can log in.
 import { settings, load, save, emit, cacheGet, cacheSet, ns } from '../store.js';
+import { log } from '../log.js';
 import { matchScore, loadScript } from '../util.js';
 
 const AUTH = 'https://accounts.spotify.com';
@@ -275,7 +276,7 @@ try {
 export const hasWidevine = () => widevine !== false;
 
 export function createSpotifyRemote(ctx) {
-  let st = { pos: 0, dur: 0, paused: true, at: 0 }, uri = null, poll = null, nearEnd = false, ended = false;
+  let st = { pos: 0, dur: 0, paused: true, at: 0 }, uri = null, poll = null, nearEnd = false, ended = false, lastPlaying = null;
 
   async function devices() { return (await spApi('/me/player/devices'))?.devices || []; }
   async function pickDevice() {
@@ -283,6 +284,7 @@ export function createSpotifyRemote(ctx) {
     // Prefer the Spotify app on this kind of device (the phone you're holding),
     // so the sound doesn't come out of another device that happens to be active.
     const here = isPhone() ? /smartphone|tablet/i : /computer/i;
+    log('spotify devices', ds.map(x => `${x.name} (${x.type}${x.is_active ? ', active' : ''}${x.is_restricted ? ', restricted' : ''})`));
     let d = ds.find(x => here.test(x.type) && x.is_active) || ds.find(x => here.test(x.type)) || ds.find(x => x.is_active) || ds[0];
     if (!d) {
       try { window.location.href = 'spotify:'; } catch {}           // open the Spotify app
@@ -293,6 +295,7 @@ export function createSpotifyRemote(ctx) {
       }
     }
     if (!d) throw new Error(`Open the Spotify app on this ${isPhone() ? 'phone' : 'computer'}, then press play again`);
+    log('spotify device chosen', d.name);
     return d.id;
   }
   // Spotify answers "OK" even when the app doesn't actually start (e.g. iOS has put
@@ -300,7 +303,8 @@ export function createSpotifyRemote(ctx) {
   async function confirmPlaying(u) {
     for (let i = 0; i < 4; i++) {
       await sleep(900);
-      const s = await spApi('/me/player').catch(() => null);
+      const s = await spApi('/me/player').catch(e => { log('spotify state error', e.message); return null; });
+      log('spotify state', s ? { playing: s.is_playing, device: s.device?.name, at: s.progress_ms, same: s.item?.uri === u, uri: s.item?.uri } : 'nothing playing');
       if (s?.is_playing && (!s.item || s.item.uri === u || s.item.linked_from?.uri === u || (s.progress_ms || 0) > 0)) return s;
     }
     return null;
@@ -313,6 +317,8 @@ export function createSpotifyRemote(ctx) {
     st = { pos: s.progress_ms || 0, dur: item?.duration_ms || st.dur, paused: !s.is_playing, at: performance.now() };
     if (!st.paused && st.dur && st.pos > st.dur - 4000) nearEnd = true;
     const movedOn = uri && item && item.uri !== uri;
+    if (s.is_playing !== lastPlaying) log('spotify now ' + (s.is_playing ? 'playing' : 'paused'), { at: s.progress_ms, device: s.device?.name, same: item?.uri === uri });
+    lastPlaying = s.is_playing;
     if (!ended && uri && nearEnd && (movedOn || (st.paused && st.pos < 3000))) { ended = true; ctx.onEnded(); }
   }
   const startPolling = () => { clearInterval(poll); poll = setInterval(refresh, 2000); };
@@ -324,10 +330,12 @@ export function createSpotifyRemote(ctx) {
     canPlay: () => spotifyConnected(),
     async load(t) {
       const { uri: u, score } = await resolveSpotifyUri(t);
+      log('spotify song', { uri: u, score });
       const device = await pickDevice();
       await spApi(`/me/player/play?device_id=${device}`, { method: 'PUT', body: JSON.stringify({ uris: [u] }) });
       let s = await confirmPlaying(u);
       if (!s) {
+        log('spotify did not start — transferring and retrying');
         // Wake the device by moving playback to it, then try once more.
         await spApi('/me/player', { method: 'PUT', body: JSON.stringify({ device_ids: [device], play: true }) }).catch(() => {});
         await spApi(`/me/player/play?device_id=${device}`, { method: 'PUT', body: JSON.stringify({ uris: [u] }) }).catch(() => {});
@@ -339,14 +347,15 @@ export function createSpotifyRemote(ctx) {
       startPolling();
       return { score };
     },
-    play: () => { st.paused = false; st.at = performance.now(); return spApi('/me/player/play', { method: 'PUT' }).catch(e => ctx.onError(e)); },
-    pause: () => { st.pos = st.paused ? st.pos : st.pos + (performance.now() - st.at); st.paused = true; return spApi('/me/player/pause', { method: 'PUT' }).catch(e => ctx.onError(e)); },
+    play: () => { log('spotify app: resume'); st.paused = false; st.at = performance.now(); return spApi('/me/player/play', { method: 'PUT' }).catch(e => { log('resume failed', e.message); ctx.onError(e); }); },
+    pause: () => { log('spotify app: pause'); st.pos = st.paused ? st.pos : st.pos + (performance.now() - st.at); st.paused = true; return spApi('/me/player/pause', { method: 'PUT' }).catch(e => ctx.onError(e)); },
     seek: ms => { st.pos = ms; st.at = performance.now(); return spApi(`/me/player/seek?position_ms=${Math.round(ms)}`, { method: 'PUT' }).catch(() => {}); },
     setVolume: () => {},                                          // the Spotify app has its own volume
     position: () => (st.paused ? st.pos : Math.min(st.dur || Infinity, st.pos + (performance.now() - st.at))),
     duration: () => st.dur,
     isPlaying: () => !st.paused,
     stop: () => {
+      if (uri) log('spotify app: stop (Strand moved on)');
       clearInterval(poll); poll = null;
       if (uri && !st.paused) spApi('/me/player/pause', { method: 'PUT' }).catch(() => {});
       uri = null; st.paused = true;

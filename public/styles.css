@@ -613,3 +613,4 @@ body.auth-mode .app, body.auth-mode .bar { visibility: hidden; }
 .diag-row { display: grid; grid-template-columns: 10px auto; column-gap: 10px; align-items: center; font-size: 13.5px; }
 .diag-row .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--dim); }
 .diag-row .dim { grid-column: 2; font-size: 12.5px; }
+.playlog { max-height: 260px; overflow: auto; margin: 10px 0 12px; padding: 10px 12px; border-radius: 10px; background: var(--bg); border: 1px solid var(--line); font: 11px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; word-break: break-word; color: var(--muted); }

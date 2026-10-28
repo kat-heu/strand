@@ -128,7 +128,9 @@ export async function spApi(path, opts = {}, retry = true) {
   }
   if (r.status === 204 || r.status === 202) return null;
   const text = await r.text();
-  const d = text ? JSON.parse(text) : null;
+  // Some player endpoints (e.g. "play") answer 200 with a plain-text id, not JSON.
+  let d = null;
+  if (text) { try { d = JSON.parse(text); } catch { d = r.ok ? null : { error: { message: text.slice(0, 120) } }; } }
   if (!r.ok) {
     const e = new Error(r.status === 429 ? 'Spotify rate limit reached — try again in a minute' : (d?.error?.message || 'Spotify HTTP ' + r.status));
     e.status = r.status; throw e;

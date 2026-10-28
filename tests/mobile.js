@@ -53,7 +53,7 @@ const TONE = wav(30, 220);
       return J(r, { tracks: { items: [{ ...spt(0), id, name: title, uri: 'spotify:track:' + id }] } });
     }
     if (P === '/me/player/devices') return J(r, { devices: [{ id: 'phone1', name: 'iPhone', type: 'Smartphone', is_active: false }] });
-    if (P === '/me/player/play' && m === 'PUT') { const body = r.request().postData(); if (body) { sp.playing = JSON.parse(body).uris[0]; sp.pos = 0; } sp.isPlaying = true; return J(r, null, 204); }
+    if (P === '/me/player/play' && m === 'PUT') { const body = r.request().postData(); if (body) { sp.playing = JSON.parse(body).uris[0]; sp.pos = 0; } sp.isPlaying = true; return r.fulfill({ status: 200, contentType: 'text/plain', body: 'dxSALWBYoZEZpqj' }); } // Spotify now answers play with a plain-text id
     if (P === '/me/player/pause') { sp.isPlaying = false; return J(r, null, 204); }
     if (P === '/me/player/seek') { sp.pos = +u.searchParams.get('position_ms'); return J(r, null, 204); }
     if (P === '/me/player') return J(r, { is_playing: sp.isPlaying, progress_ms: sp.pos, item: sp.playing ? { uri: sp.playing, duration_ms: 200000 } : null });
@@ -180,7 +180,7 @@ const TONE = wav(30, 220);
   await u.evaluate(() => { location.hash = '#/settings'; }); await sleep(800);
   check('Settings shows the running version', (await u.textContent('#web-version')).includes('Version bbb222'));
   await u.locator('#web-version button', { hasText: 'Check connections' }).tap(); await sleep(11000);
-  check('Connection check lists every service with a result', await u.evaluate(() => { const r = [...document.querySelectorAll('.diag-row')]; return r.length === 7 && r.every(x => !x.textContent.includes('checking…')); }), await u.textContent('#web-version'));
+  check('Connection check lists every service with a result', await u.evaluate(() => { const r = [...document.querySelectorAll('.diag-row')]; return r.length === 8 && r.every(x => !x.textContent.includes('checking…')); }), await u.textContent('#web-version'));
   await u.close();
 
   check('No JavaScript errors', errs.length === 0, errs.join(' | '));

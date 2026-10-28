@@ -886,6 +886,11 @@ async function connectionCheck(box, btn) {
     ['Lyrics (LRCLIB)', async () => { const r = await fetch('https://lrclib.net/api/search?q=khalid'); if (!r.ok) throw new Error('HTTP ' + r.status); return 'ok'; }],
     ['Spotify', async () => { if (!spotifyConnected()) throw new Error('not connected on this device'); const me = await spApi('/me'); return 'connected as ' + (me.display_name || me.id); }],
     ['Spotify app (for full songs)', async () => { if (!spotifyConnected()) throw new Error('connect Spotify first'); const d = (await spApi('/me/player/devices'))?.devices || []; return d.length ? d.map(x => x.name).join(', ') : 'no Spotify app open right now (Strand opens it when you press play)'; }],
+    ['Screen', async () => {
+      const cs = getComputedStyle(document.documentElement), probe = h('div', { style: { position: 'fixed', bottom: '0', height: '1px', paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' } });
+      document.body.append(probe); const ps = getComputedStyle(probe); const box = probe.getBoundingClientRect(); probe.remove();
+      return `${innerWidth}×${innerHeight} · screen ${screen.width}×${screen.height} · view ${Math.round(visualViewport?.height || 0)} · doc ${document.documentElement.clientHeight} · fixed-bottom ${Math.round(box.bottom)} · safe ${ps.paddingTop}/${ps.paddingBottom} · gap ${cs.getPropertyValue('--vgap')} · ${navigator.standalone ? 'home-screen app' : 'browser'}`;
+    }],
     ['YouTube', async () => { if (settings.youtubeKey || googleActive()) return 'ready'; throw new Error('not set up (needs a YouTube API key or Google sign-in)'); }],
   ];
   box.replaceChildren(...tests.map(([name]) => h('div', { class: 'diag-row', 'data-name': name }, h('span', { class: 'dot' }), h('b', {}, name), h('span', { class: 'dim' }, 'checking…'))));

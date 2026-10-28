@@ -1,4 +1,5 @@
-import { h, fmt, debounce, b64urlEncode, b64urlDecode } from './util.js';
+import { h, fmt, debounce, b64urlEncode, b64urlDecode, jsonp } from './util.js';
+const songs = n => `${n.toLocaleString()} song${n === 1 ? '' : 's'}`;
 import { startUpdates, checkForUpdate, currentVersion } from './webupdate.js';
 import { askText, askConfirm, showText } from './ui.js';
 import { I, SERVICES } from './icons.js';
@@ -193,9 +194,10 @@ function markPlaying(root = document) {
   root.querySelectorAll('.row[data-key]').forEach(r => r.classList.toggle('playing', r.dataset.key === k));
 }
 
-function card({ href, art, title, sub, round, onPlay }) {
+const likedArt = (size = 72) => h('div', { class: 'ph liked-art', style: { background: 'linear-gradient(135deg,var(--accent),var(--accent-2))', color: '#140a07' }, html: I.heartFill.replace(/18/g, String(size)) });
+function card({ href, art, title, sub, round, onPlay, liked }) {
   const c = h('a', { class: 'card' + (round ? ' artist' : ''), href: href || 'javascript:void 0' },
-    img(art), h('div', { class: 't' }, title), h('div', { class: 's' }, sub || ''));
+    liked ? likedArt() : img(art), h('div', { class: 't' }, title), h('div', { class: 's' }, sub || ''));
   if (onPlay) c.append(h('button', { class: 'fab', html: I.play, title: 'Play', onClick: e => { e.preventDefault(); e.stopPropagation(); onPlay(); } }));
   return c;
 }
@@ -242,10 +244,10 @@ views.home = async v => {
 
 function playlistGrid(limit = Infinity) {
   const g = h('div', { class: 'grid' });
-  if (library.liked.length) g.append(card({ href: '#/liked', art: null, title: 'Liked songs', sub: `${library.liked.length} songs`, onPlay: () => P.playQueue(library.liked, 0) }));
+  if (library.liked.length) g.append(card({ href: '#/liked', liked: true, title: 'Liked songs', sub: songs(library.liked.length), onPlay: () => P.playQueue(library.liked, 0) }));
   library.playlists.slice(0, limit).forEach(pl => g.append(card({
     href: `#/playlist/${pl.id}`, art: pl.artwork || pl.tracks[0]?.artwork, title: pl.name,
-    sub: `${pl.source ? SERVICES[pl.source]?.label + ' · ' : ''}${pl.tracks.length} songs`, onPlay: () => P.playQueue(pl.tracks, 0),
+    sub: `${pl.source ? SERVICES[pl.source]?.label + ' · ' : ''}${songs(pl.tracks.length)}`, onPlay: () => P.playQueue(pl.tracks, 0),
   })));
   return g;
 }
@@ -453,7 +455,7 @@ views.import = async v => {
     try {
       const pls = await spotifyPlaylists();
       const g = h('div', { class: 'grid' });
-      const liked = card({ art: null, title: 'Liked Songs', sub: 'Spotify' });
+      const liked = card({ liked: true, title: 'Liked Songs', sub: 'Spotify' });
       liked.addEventListener('click', e => { e.preventDefault(); scrollTo(0, 0); main.scrollTo({ top: 0, behavior: 'smooth' }); runImport('https://open.spotify.com/collection/tracks', status, btn); });
       g.append(liked);
       pls.forEach(p => {
@@ -783,10 +785,12 @@ views.settings = v => {
       btn.disabled = false; btn.textContent = 'Check for updates';
       if (r === 'latest') toast('You have the latest version'); else if (r === 'offline') toast('Couldn’t check — are you online?');
     } }, 'Check for updates');
+    const diag = h('div', { class: 'diag' });
+    const run = h('button', { class: 'btn small ghost', onClick: () => connectionCheck(diag, run) }, 'Check connections');
     s.append(h('section', { class: 'svc-card', id: 'web-version' },
       h('header', {}, h('h3', {}, 'Strand'), stat),
       h('p', {}, 'Strand updates itself: it checks for a new version whenever you open it and loads it straight away (or after your song, if music is playing).'),
-      h('div', { class: 'inline' }, btn)));
+      h('div', { class: 'inline' }, btn, run), diag));
   }
 
   // iPhone / iPad: install as a Home Screen app through a profile
@@ -868,6 +872,30 @@ views.t = (v, payload) => {
       h('button', { class: 'btn', onClick: () => { toggleLike(t); toast(isLiked(t) ? 'Added to Liked' : 'Removed'); } }, h('span', { html: I.heart }), 'Like')),
     h('div', { class: 'open-in' }, links.map(([k, href]) => h('a', { href, target: '_blank', rel: 'noopener' }, h('span', {}, svcDot(k), 'Open in ' + SERVICES[k].label), h('span', {}, '↗'))))));
 };
+
+// ---------------------------------------------------------------- connection check
+// Shows which music services this device can reach, so playback problems can be
+// pinned down from a screenshot.
+async function connectionCheck(box, btn) {
+  btn.disabled = true;
+  const timed = (p, ms = 10000) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('timed out')), ms))]);
+  const tests = [
+    ['Apple catalogue', async () => { const r = await fetch('https://itunes.apple.com/search?term=khalid&entity=song&limit=1'); if (!r.ok) throw new Error('HTTP ' + r.status); await r.json(); return 'ok'; }],
+    ['Apple catalogue (backup route)', async () => { await jsonp('https://itunes.apple.com/search?term=khalid&entity=song&limit=1'); return 'ok'; }],
+    ['Deezer previews', async () => { const d = await jsonp('https://api.deezer.com/search?q=khalid&limit=1&output=jsonp'); if (d?.error) throw new Error(d.error.message || 'error'); return 'ok'; }],
+    ['Lyrics (LRCLIB)', async () => { const r = await fetch('https://lrclib.net/api/search?q=khalid'); if (!r.ok) throw new Error('HTTP ' + r.status); return 'ok'; }],
+    ['Spotify', async () => { if (!spotifyConnected()) throw new Error('not connected on this device'); const me = await spApi('/me'); return 'connected as ' + (me.display_name || me.id); }],
+    ['Spotify app (for full songs)', async () => { if (!spotifyConnected()) throw new Error('connect Spotify first'); const d = (await spApi('/me/player/devices'))?.devices || []; return d.length ? d.map(x => x.name).join(', ') : 'no Spotify app open right now (Strand opens it when you press play)'; }],
+    ['YouTube', async () => { if (settings.youtubeKey || googleActive()) return 'ready'; throw new Error('not set up (needs a YouTube API key or Google sign-in)'); }],
+  ];
+  box.replaceChildren(...tests.map(([name]) => h('div', { class: 'diag-row', 'data-name': name }, h('span', { class: 'dot' }), h('b', {}, name), h('span', { class: 'dim' }, 'checking…'))));
+  await Promise.all(tests.map(async ([name, fn], i) => {
+    const row = box.children[i];
+    try { const msg = await timed(fn()); row.children[0].style.background = 'var(--good)'; row.children[2].textContent = msg; }
+    catch (e) { row.children[0].style.background = '#ff4d5e'; row.children[2].textContent = e?.message || String(e); }
+  }));
+  btn.disabled = false;
+}
 
 // ---------------------------------------------------------------- router
 let routeToken = 0;
@@ -1232,6 +1260,23 @@ document.addEventListener('keydown', e => {
 
 // ---------------------------------------------------------------- boot
 startUpdates(() => P.state.playing);
+
+// Some iPhone versions give Home Screen apps a page that stops short of the bottom
+// of the screen, which left a strip under the tab bar. Measure how far the page
+// falls short and let the bottom bars reach the real screen edge.
+function fitScreen() {
+  const standalone = navigator.standalone || matchMedia('(display-mode: standalone), (display-mode: fullscreen)').matches;
+  let gap = 0;
+  if (standalone && /iPhone|iPad|iPod/.test(navigator.userAgent)) {
+    const portrait = innerHeight > innerWidth;
+    const full = portrait ? Math.max(screen.height, screen.width) : Math.min(screen.height, screen.width);
+    gap = Math.max(0, Math.min(90, full - innerHeight));
+  }
+  document.documentElement.style.setProperty('--vgap', gap + 'px');
+}
+fitScreen();
+addEventListener('resize', fitScreen);
+addEventListener('orientationchange', () => setTimeout(fitScreen, 300));
 
 (async function boot() {
   // Strand accounts: when configured, you must sign in before using the app.

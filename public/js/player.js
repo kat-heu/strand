@@ -78,7 +78,8 @@ async function playTrack(t, force = null) {
   if (my !== loadToken) return;
   Object.assign(state, { loading: false, trying: null, error: errors.join(' · ') || 'No source can play this track' });
   emit('track', t);
-  emit('toast', 'Couldn’t play “' + t.title + '” — ' + (errors[0] || 'no source available'));
+  const hint = !providers.spotifyRemote.available() && !providers.youtube.canPlay(t) ? '. Connect Spotify in Your music to play full songs.' : '';
+  emit('toast', 'Couldn’t play “' + t.title + '” — ' + (errors[0] || 'no source available') + hint);
 }
 
 // Replay the current song from a specific source (e.g. "Play in Spotify app").

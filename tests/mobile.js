@@ -179,6 +179,8 @@ const TONE = wav(30, 220);
   check('Opening the app after an update loads the new version', await u.evaluate(() => window.__marker === undefined));
   await u.evaluate(() => { location.hash = '#/settings'; }); await sleep(800);
   check('Settings shows the running version', (await u.textContent('#web-version')).includes('Version bbb222'));
+  await u.locator('#web-version button', { hasText: 'Check connections' }).tap(); await sleep(11000);
+  check('Connection check lists every service with a result', await u.evaluate(() => { const r = [...document.querySelectorAll('.diag-row')]; return r.length === 7 && r.every(x => !x.textContent.includes('checking…')); }), await u.textContent('#web-version'));
   await u.close();
 
   check('No JavaScript errors', errs.length === 0, errs.join(' | '));

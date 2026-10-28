@@ -25,6 +25,7 @@ const defaults = {
   scProfile: '',          // linked SoundCloud profile URL
   scPlaylists: [],        // SoundCloud playlists added by link: [{ url, name, art, count }]
   preferred: 'auto',      // auto | spotify | apple | youtube | preview
+  phoneSpotify: 'strand', // on phones, Spotify songs play: 'strand' (via YouTube in Strand) | 'app' (Spotify app remote)
   volume: 0.8,
   lyricsOffset: 0,        // ms, applied to lyric timing
   country: 'us',          // iTunes / Apple Music storefront

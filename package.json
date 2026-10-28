@@ -1,14 +1,14 @@
 {
   "name": "strand",
   "productName": "Strand",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "description": "One player for Spotify, Apple Music, YouTube Music and SoundCloud \u2014 synced lyrics, visualizer, playlist import.",
   "main": "electron/main.js",
   "scripts": {
     "start": "node server.js",
     "desktop": "electron .",
     "dist": "electron-builder",
-    "test": "node tests/e2e.js && node tests/accounts.js && node tests/desktop-signin.js"
+    "test": "node tests/e2e.js && node tests/accounts.js && node tests/desktop-signin.js && node tests/mobile.js"
   },
   "devDependencies": {
     "electron": "^33.2.0",

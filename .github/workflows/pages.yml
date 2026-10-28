@@ -1,8 +1,12 @@
 name: Publish web version (GitHub Pages)
 
-# Run manually from the Actions tab. GitHub Pages is free for public repositories;
-# private repositories need a paid GitHub plan.
+# Publishes the web app (public/) to https://kat-heu.github.io/strand/ on every
+# push to main. The Android app opens this site, so it updates the same way.
+# One-time setup: repo Settings -> Pages -> Source: "GitHub Actions".
 on:
+  push:
+    branches: [main]
+    paths: ['public/**', '.github/workflows/pages.yml']
   workflow_dispatch:
 
 permissions:

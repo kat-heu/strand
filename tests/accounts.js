@@ -10,6 +10,7 @@ const SB = 'https://sb.test';
 const results = [];
 const check = (name, ok, extra = '') => results.push([ok ? 'PASS' : 'FAIL', name, extra]);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+let debugPage = null;
 
 // ---- tiny Supabase mock
 const users = new Map();   // email -> { id, email, password, user_metadata, confirmed }
@@ -89,7 +90,7 @@ const track = i => ({ key: 'it:' + i, title: 'Song ' + i, artist: 'Nova Lane', a
   const b = await chromium.launch();
   const errs = [];
   const ctxA = await b.newContext({ viewport: { width: 1300, height: 850 } }); await setup(ctxA);
-  const p = await ctxA.newPage();
+  const p = await ctxA.newPage(); debugPage = p;
   p.on('pageerror', e => errs.push('PAGEERR ' + e.message));
   p.on('dialog', d => { errs.push('NATIVE DIALOG'); d.dismiss(); });
 
@@ -114,7 +115,7 @@ const track = i => ({ key: 'it:' + i, title: 'Song ' + i, artist: 'Nova Lane', a
   // Sign up
   await p.fill('.auth-form input[placeholder="Your name"]', 'Kat');
   await p.fill('.auth-form input[type=password]', 'secret123');
-  await p.click('.auth-submit'); await sleep(1800);
+  await p.click('.auth-submit'); await p.locator('.me-chip').waitFor({ timeout: 20000 }).catch(() => {}); await sleep(300);
   check('Sign-up enters the app', !(await p.locator('.auth-screen').count()) && await p.locator('#nav').isVisible());
   check('Sidebar shows account name', (await p.textContent('.me-chip')).includes('Kat'));
   check('Existing library kept after sign-up', await p.evaluate(() => strand.library.playlists[0]?.name === 'Kat mix' && strand.library.liked.length === 1));
@@ -151,7 +152,7 @@ const track = i => ({ key: 'it:' + i, title: 'Song ' + i, artist: 'Nova Lane', a
   await p.fill('.auth-form input[placeholder="Your name"]', 'Bob');
   await p.fill('.auth-form input[type=email]', 'bob@example.com');
   await p.fill('.auth-form input[type=password]', 'bobpass1');
-  await p.click('.auth-submit'); await sleep(1800);
+  await p.click('.auth-submit'); await p.locator('.me-chip').waitFor({ timeout: 20000 }).catch(() => {}); await sleep(300);
   check('Second user signs up on same device', (await p.textContent('.me-chip')).includes('Bob'));
   check('Second user does NOT see first user\'s library', await p.evaluate(() => strand.library.playlists.length === 0 && strand.library.liked.length === 0));
   check('Second user does NOT inherit first user\'s Spotify', await p.locator('#conn a[title="Spotify linked"]').count() === 0);
@@ -169,7 +170,7 @@ const track = i => ({ key: 'it:' + i, title: 'Song ' + i, artist: 'Nova Lane', a
   // Kat signs back in on the same device
   await p.fill('.auth-form input[type=email]', 'kat@example.com');
   await p.fill('.auth-form input[type=password]', 'secret123');
-  await p.click('.auth-submit'); await sleep(1800);
+  await p.click('.auth-submit'); await p.locator('.me-chip').waitFor({ timeout: 20000 }).catch(() => {}); await sleep(300);
   check('First user signs back in with her library + Spotify', await p.evaluate(() => strand.library.liked.length === 2) && await p.locator('#conn a[title="Spotify linked"]').count() === 1);
 
   // Another device: fresh browser profile
@@ -179,7 +180,7 @@ const track = i => ({ key: 'it:' + i, title: 'Song ' + i, artist: 'Nova Lane', a
   await q.getByRole('button', { name: 'Sign in' }).last().click(); await sleep(200);
   await q.fill('.auth-form input[type=email]', 'kat@example.com');
   await q.fill('.auth-form input[type=password]', 'secret123');
-  await q.click('.auth-submit'); await sleep(2500);
+  await q.click('.auth-submit'); await q.locator('.me-chip').waitFor({ timeout: 20000 }).catch(() => {}); await sleep(1500);
   check('Other device gets the synced library', await q.evaluate(() => strand.library.playlists[0]?.name === 'Kat mix' && strand.library.liked.length === 2));
   check('Other device gets the SoundCloud playlists', await q.evaluate(() => strand.settings.scPlaylists?.[0]?.name === 'Mix'));
   check('Other device: Spotify not linked (per-device logins)', await q.locator('#conn a[title="Spotify linked"]').count() === 0);
@@ -229,4 +230,9 @@ const track = i => ({ key: 'it:' + i, title: 'Song ' + i, artist: 'Nova Lane', a
   for (const r of results) console.log(r[0], '-', r[1], r[0] === 'FAIL' ? '→ ' + r[2] : '');
   console.log(`\n${results.length - failed}/${results.length} passed`);
   await b.close(); process.exit(failed ? 1 : 0);
-})().catch(e => { for (const r of results) console.log(r[0], '-', r[1], r[0] === 'FAIL' ? '→ ' + r[2] : ''); console.error('CRASH', e.message.split('\n')[0]); process.exit(1); });
+})().catch(async e => {
+  for (const r of results) console.log(r[0], '-', r[1], r[0] === 'FAIL' ? '→ ' + r[2] : '');
+  console.error('CRASH', e.message.split('\n')[0]);
+  try { console.error('Page was at', debugPage.url(), '| heading:', await debugPage.locator('h1').first().textContent({ timeout: 1000 })); await debugPage.screenshot({ path: 'test-results/accounts-crash.png' }); } catch {}
+  process.exit(1);
+});

@@ -159,6 +159,33 @@ function loadSdk() {
   });
 }
 
+export async function resolveSpotifyUri(t) {
+  if (t.ids?.spotify) return { uri: t.ids.spotify, score: null };
+  const cached = cacheGet('sp', t.key);
+  if (cached) return cached;
+  let items = [];
+  if (t.ids?.isrc) items = (await spApi(`/search?type=track&limit=3&q=${encodeURIComponent('isrc:' + t.ids.isrc)}`)).tracks.items;
+  if (!items.length) {
+    const q = `track:${t.title.replace(/["']/g, '')} artist:${t.artist.split(/,|&/)[0].trim()}`;
+    items = (await spApi(`/search?type=track&limit=8&q=${encodeURIComponent(q)}`)).tracks.items;
+  }
+  if (!items.length) items = (await spApi(`/search?type=track&limit=8&q=${encodeURIComponent(t.artist + ' ' + t.title)}`)).tracks.items;
+  let best = null, score = 0;
+  for (const it of items) {
+    const sc = matchScore(t, { title: it.name, artist: it.artists.map(a => a.name).join(' '), durationMs: it.duration_ms });
+    if (sc > score) { score = sc; best = it; }
+  }
+  if (!best || score < 0.55) throw new Error('not found on Spotify');
+  const out = { uri: best.uri, score };
+  cacheSet('sp', t.key, out);
+  return out;
+}
+
+
+// Phones (and tablets) can't run Spotify's in-page player; there Strand uses the
+// remote instead (createSpotifyRemote below).
+export const isPhone = () => /Android|iPhone|iPod|iPad|Mobile/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent));
+
 export function createSpotify(ctx) {
   let player = null, deviceId = null, ready = null;
   let st = { pos: 0, dur: 0, paused: true, at: 0 }, currentUri = null, nearEnd = false, endedFor = null;
@@ -201,35 +228,13 @@ export function createSpotify(ctx) {
     return ready;
   }
 
-  async function resolve(t) {
-    if (t.ids?.spotify) return { uri: t.ids.spotify, score: null };
-    const cached = cacheGet('sp', t.key);
-    if (cached) return cached;
-    let items = [];
-    if (t.ids?.isrc) items = (await spApi(`/search?type=track&limit=3&q=${encodeURIComponent('isrc:' + t.ids.isrc)}`)).tracks.items;
-    if (!items.length) {
-      const q = `track:${t.title.replace(/["']/g, '')} artist:${t.artist.split(/,|&/)[0].trim()}`;
-      items = (await spApi(`/search?type=track&limit=8&q=${encodeURIComponent(q)}`)).tracks.items;
-    }
-    if (!items.length) items = (await spApi(`/search?type=track&limit=8&q=${encodeURIComponent(t.artist + ' ' + t.title)}`)).tracks.items;
-    let best = null, score = 0;
-    for (const it of items) {
-      const sc = matchScore(t, { title: it.name, artist: it.artists.map(a => a.name).join(' '), durationMs: it.duration_ms });
-      if (sc > score) { score = sc; best = it; }
-    }
-    if (!best || score < 0.55) throw new Error('not found on Spotify');
-    const out = { uri: best.uri, score };
-    cacheSet('sp', t.key, out);
-    return out;
-  }
-
   return {
     name: 'spotify',
     label: 'Spotify',
-    available: () => spotifyConnected(),
+    available: () => spotifyConnected() && !isPhone(),
     canPlay: () => spotifyConnected(),
     async load(t) {
-      const { uri, score } = await resolve(t);
+      const { uri, score } = await resolveSpotifyUri(t);
       await ensure();
       try { player.activateElement?.(); } catch {}
       nearEnd = false; endedFor = null; currentUri = uri;
@@ -249,6 +254,71 @@ export function createSpotify(ctx) {
     duration: () => st.dur,
     isPlaying: () => !st.paused,
     stop: () => { currentUri = null; try { player?.pause(); } catch {} },
+  };
+}
+
+// ---- phone remote ---------------------------------------------------------
+// On phones, Strand plays Spotify songs in the Spotify app and acts as its remote:
+// Strand's own player shows the song, progress, pause/skip/seek, using Spotify's
+// Web API player endpoints (needs Premium). If the Spotify app isn't running yet,
+// Strand opens it and waits for it to appear as a device.
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+export function createSpotifyRemote(ctx) {
+  let st = { pos: 0, dur: 0, paused: true, at: 0 }, uri = null, poll = null, nearEnd = false, ended = false;
+
+  async function devices() { return (await spApi('/me/player/devices'))?.devices || []; }
+  async function pickDevice() {
+    let ds = await devices();
+    let d = ds.find(x => x.is_active) || ds.find(x => /smartphone|tablet/i.test(x.type)) || ds[0];
+    if (!d) {
+      try { window.location.href = 'spotify:'; } catch {}           // open the Spotify app
+      for (let i = 0; i < 10 && !d; i++) {
+        await sleep(1500);
+        ds = await devices();
+        d = ds.find(x => /smartphone|tablet/i.test(x.type)) || ds[0];
+      }
+    }
+    if (!d) throw new Error('Open the Spotify app on this phone, then press play again');
+    return d.id;
+  }
+  async function refresh() {
+    let s;
+    try { s = await spApi('/me/player'); } catch { return; }
+    if (!s) return;
+    const item = s.item;
+    st = { pos: s.progress_ms || 0, dur: item?.duration_ms || st.dur, paused: !s.is_playing, at: performance.now() };
+    if (!st.paused && st.dur && st.pos > st.dur - 4000) nearEnd = true;
+    const movedOn = uri && item && item.uri !== uri;
+    if (!ended && uri && nearEnd && (movedOn || (st.paused && st.pos < 3000))) { ended = true; ctx.onEnded(); }
+  }
+  const startPolling = () => { clearInterval(poll); poll = setInterval(refresh, 2000); };
+
+  return {
+    name: 'spotifyRemote',
+    label: 'Spotify app',
+    available: () => spotifyConnected() && isPhone(),
+    canPlay: () => spotifyConnected(),
+    async load(t) {
+      const { uri: u, score } = await resolveSpotifyUri(t);
+      const device = await pickDevice();
+      await spApi(`/me/player/play?device_id=${device}`, { method: 'PUT', body: JSON.stringify({ uris: [u] }) });
+      uri = u; nearEnd = false; ended = false;
+      st = { pos: 0, dur: t.durationMs || 0, paused: false, at: performance.now() };
+      startPolling();
+      return { score };
+    },
+    play: () => { st.paused = false; st.at = performance.now(); return spApi('/me/player/play', { method: 'PUT' }).catch(e => ctx.onError(e)); },
+    pause: () => { st.pos = st.paused ? st.pos : st.pos + (performance.now() - st.at); st.paused = true; return spApi('/me/player/pause', { method: 'PUT' }).catch(e => ctx.onError(e)); },
+    seek: ms => { st.pos = ms; st.at = performance.now(); return spApi(`/me/player/seek?position_ms=${Math.round(ms)}`, { method: 'PUT' }).catch(() => {}); },
+    setVolume: () => {},                                          // phones: use the volume buttons
+    position: () => (st.paused ? st.pos : Math.min(st.dur || Infinity, st.pos + (performance.now() - st.at))),
+    duration: () => st.dur,
+    isPlaying: () => !st.paused,
+    stop: () => {
+      clearInterval(poll); poll = null;
+      if (uri && !st.paused) spApi('/me/player/pause', { method: 'PUT' }).catch(() => {});
+      uri = null; st.paused = true;
+    },
   };
 }
 

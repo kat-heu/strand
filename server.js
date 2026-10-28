@@ -14,6 +14,7 @@ const TYPES = {
   '.png': 'image/png',
   '.ico': 'image/x-icon',
   '.json': 'application/json',
+  '.webmanifest': 'application/manifest+json',
 };
 
 // Desktop sign-in hand-off. The desktop app opens the login page in the user's real

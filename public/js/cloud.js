@@ -14,7 +14,7 @@ import { load, save, emit, on, library, settings, ns, USER_ID } from './store.js
 const BASE = (CONFIG.supabaseUrl || '').replace(/\/+$/, '');
 const KEY = CONFIG.supabaseKey || '';
 const SESSION_KEY = 'strand:session';
-const PREF_KEYS = ['preferred', 'country', 'lyricsOffset', 'volume', 'scProfile', 'scPlaylists'];
+const PREF_KEYS = ['preferred', 'phoneSpotify', 'country', 'lyricsOffset', 'volume', 'scProfile', 'scPlaylists'];
 
 export const cloudEnabled = () => !!(BASE && KEY);
 let session = load(SESSION_KEY, null);

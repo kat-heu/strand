@@ -2,10 +2,17 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <title>Strand</title>
   <meta name="description" content="One player for Spotify, Apple Music, YouTube Music and SoundCloud.">
   <link rel="icon" href="icon.svg">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <meta name="theme-color" content="#0c0b10">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Strand">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
@@ -27,6 +34,7 @@
     <main id="main" class="main" tabindex="-1"></main>
 
     <aside class="panel" id="panel">
+      <div class="np-head"><button id="np-close" class="icon-btn" title="Close"></button><span>Now playing</span><span class="np-head-sp"></span></div>
       <div class="np-media" id="np-media">
         <img id="np-art" alt="">
         <div id="media-yt" class="media-host"></div>
@@ -38,6 +46,16 @@
         <div id="np-artist" class="np-artist"></div>
         <div id="np-source" class="np-source"></div>
       </div>
+      <div class="np-controls" id="np-controls">
+        <div class="np-progress"><input id="np-seek" type="range" min="0" max="1000" value="0" aria-label="Seek"><div class="np-times"><span id="np-pos">0:00</span><span id="np-dur">0:00</span></div></div>
+        <div class="np-buttons">
+          <button id="np-shuffle" class="icon-btn" title="Shuffle"></button>
+          <button id="np-prev" class="icon-btn big" title="Previous"></button>
+          <button id="np-play" class="play-btn big" title="Play / pause"></button>
+          <button id="np-next" class="icon-btn big" title="Next"></button>
+          <button id="np-repeat" class="icon-btn" title="Repeat"></button>
+        </div>
+      </div>
       <div class="tabs" role="tablist">
         <button data-tab="lyrics" class="on" role="tab">Lyrics</button>
         <button data-tab="queue" role="tab">Up next</button>
@@ -47,6 +65,7 @@
   </div>
 
   <footer class="bar" id="bar">
+    <div class="bar-line" id="bar-line"></div>
     <div class="bar-left">
       <img id="bar-art" class="bar-art" alt="">
       <div class="bar-meta">
@@ -77,6 +96,8 @@
       <input id="volume" type="range" min="0" max="100" aria-label="Volume">
     </div>
   </footer>
+
+  <nav class="tabbar" id="tabbar" aria-label="Main"></nav>
 
   <div id="stage" class="stage" hidden>
     <canvas id="stage-viz"></canvas>

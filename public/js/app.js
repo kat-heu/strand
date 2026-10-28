@@ -9,7 +9,7 @@ import { startVisualizer } from './visualizer.js';
 import { parseLink, importLink } from './importer.js';
 import {
   spotifyLogin, spotifyLogout, spotifyConnected, handleSpotifyCallback, redirectUri,
-  spotifyPlaylists, spApi, playlistTotal,
+  spotifyPlaylists, spApi, playlistTotal, isPhone,
 } from './providers/spotify.js';
 import { appleConfigured, appleAuthorized, appleAuthorize, appleUnauthorize, appleInit } from './providers/apple.js';
 import { ytSearch, ytToTrack } from './providers/youtube.js';
@@ -125,6 +125,7 @@ function trackRows(list, { compact = false, showArt = true, numbers = false } = 
           h('div', { class: 'dur' }, t.durationMs ? fmt(t.durationMs) : ''),
           h('div', { class: 'acts' }, like, more));
     if (t.key === playingKey()) row.classList.add('playing');
+    if (!showArt && !compact) row.classList.add('noart');
     row.addEventListener('dblclick', () => P.playQueue(list, i));
     // Touch screens have no hover/double-click: a single tap plays.
     if (compact || touch.matches) row.addEventListener('click', () => P.playQueue(list, i));
@@ -362,7 +363,7 @@ views.album = async (v, id) => {
   const hero = h('div', { class: 'hero' },
     img(a.artwork, 'hero-art'),
     h('div', { class: 'hero-meta' }, h('div', { class: 'eyebrow' }, a.type || 'Album'), h('h1', {}, a.title),
-      h('div', { class: 'sub' }, a.artistId ? h('a', { href: `#/artist/${a.artistId}` }, h('b', {}, a.artist)) : a.artist, ` · ${a.year} · ${a.tracks.length} songs · ${Math.round(total / 60000)} min`),
+      h('div', { class: 'sub' }, a.artistId ? h('a', { href: `#/artist/${a.artistId}` }, h('b', {}, a.artist)) : a.artist, ' · ' + [a.year, `${a.tracks.length} songs`, `${Math.round(total / 60000)} min`].filter(Boolean).join(' · ')),
       h('div', { class: 'row-actions', style: { marginTop: '6px' } },
         h('button', { class: 'btn primary', onClick: () => P.playQueue(a.tracks, 0) }, h('span', { html: I.play }), 'Play'),
         h('button', { class: 'btn', onClick: () => { newPlaylist(a.title, a.tracks.slice(), { artwork: a.artwork }); toast('Saved to your library'); } }, h('span', { html: I.plus }), 'Save'))));
@@ -770,6 +771,9 @@ views.settings = v => {
   s.append(h('section', { class: 'svc-card' },
     h('header', {}, h('h3', {}, 'Playback')),
     h('div', { class: 'field' }, h('label', {}, 'Preferred source. If a song isn’t available there, Strand tries the next one.'), pref),
+    h('div', { class: 'field' }, h('label', {}, 'On phones, Spotify songs play…'),
+      h('select', { class: 'input', onChange: e => { setSetting('phoneSpotify', e.target.value); toast('Saved'); } },
+        [['strand', 'In Strand (finds the song on YouTube)'], ['app', 'In the Spotify app (Strand is the remote)']].map(([k, l]) => h('option', { value: k, selected: settings.phoneSpotify === k }, l)))),
     h('div', { class: 'field' }, h('label', {}, 'Store region (two-letter country code, e.g. us, gb, ae)'), country),
     field('Public web address for share links (leave blank to use this one)', 'shareBase', { placeholder: 'https://strand.example.com/' }),
     h('div', { class: 'inline' },
@@ -835,7 +839,8 @@ async function route() {
   const arg = rest.length ? decodeURIComponent(rest.join('/')) : undefined;
   const fn = views[name] || views.home;
   hideMenu();
-  document.querySelectorAll('#nav a').forEach(a => a.classList.toggle('on', a.dataset.nav === name || (name === '' && a.dataset.nav === 'home')));
+  document.querySelectorAll('#nav a, #tabbar a').forEach(a => a.classList.toggle('on', a.dataset.nav === name || (name === '' && a.dataset.nav === 'home')));
+  closeSheet();
   document.querySelectorAll('#side-playlists a').forEach(a => a.classList.toggle('on', a.getAttribute('href') === location.hash));
   const v = h('div', { class: 'view' });
   main.replaceChildren(v);
@@ -847,6 +852,10 @@ async function route() {
 window.addEventListener('hashchange', route);
 
 // ---------------------------------------------------------------- sidebar
+function renderTabbar() {
+  const items = [['home', 'Home', I.home], ['search', 'Search', I.search], ['me', 'Your music', I.headphones], ['library', 'Library', I.library], ['settings', 'Settings', I.settings]];
+  $('tabbar').replaceChildren(...items.map(([k, l, ic]) => h('a', { href: '#/' + (k === 'home' ? '' : k), 'data-nav': k }, h('span', { html: ic.replace(/width="20" height="20"/, 'width="22" height="22"') }), l)));
+}
 function renderNav() {
   const items = [['home', 'Home', I.home], ['me', 'Your music', I.headphones], ['search', 'Search', I.search], ['library', 'Library', I.library], ['import', 'Import', I.import], ['settings', 'Settings', I.settings]];
   $('nav').replaceChildren(...items.map(([k, l, ic]) => h('a', { href: '#/' + (k === 'home' ? '' : k), 'data-nav': k, title: l }, h('span', { html: ic, style: { display: 'contents' } }), h('span', {}, l))));
@@ -893,6 +902,27 @@ $('btn-panel').onclick = () => {
   if (matchMedia('(max-width: 1180px)').matches) document.body.classList.toggle('panel-open');
   else document.body.classList.toggle('panel-off');
 };
+// ---------------------------------------------------------------- phone player sheet
+const phoneLayout = matchMedia('(max-width: 760px)');
+function openSheet() { if (phoneLayout.matches && P.state.track) { document.body.classList.add('np-open'); $('panel').scrollTop = 0; } }
+function closeSheet() { document.body.classList.remove('np-open'); }
+$('bar').addEventListener('click', e => { if (phoneLayout.matches && !e.target.closest('button, a, input')) openSheet(); });
+$('np-close').innerHTML = I.chevronDown;
+$('np-close').onclick = closeSheet;
+$('np-prev').innerHTML = I.prev; $('np-next').innerHTML = I.next; $('np-shuffle').innerHTML = I.shuffle; $('np-repeat').innerHTML = I.repeat;
+$('np-play').onclick = P.toggle; $('np-prev').onclick = P.prev; $('np-next').onclick = () => P.next();
+$('np-shuffle').onclick = P.toggleShuffle; $('np-repeat').onclick = P.cycleRepeat;
+const npSeek = $('np-seek');
+let npSeeking = false;
+npSeek.addEventListener('input', () => { npSeeking = true; setRange(npSeek, npSeek.value / 10); $('np-pos').textContent = fmt(npSeek.value / 1000 * P.state.duration); });
+npSeek.addEventListener('change', () => { P.seek(npSeek.value / 1000 * P.state.duration); npSeeking = false; });
+// Swipe down on the artwork/header to close
+{
+  let y0 = null;
+  $('panel').addEventListener('touchstart', e => { y0 = $('panel').scrollTop <= 0 ? e.touches[0].clientY : null; }, { passive: true });
+  $('panel').addEventListener('touchend', e => { if (y0 != null && e.changedTouches[0].clientY - y0 > 90) closeSheet(); y0 = null; }, { passive: true });
+}
+
 let seeking = false;
 seekEl.addEventListener('input', () => { seeking = true; setRange(seekEl, seekEl.value / 10); $('t-pos').textContent = fmt(seekEl.value / 1000 * P.state.duration); });
 seekEl.addEventListener('change', () => { P.seek(seekEl.value / 1000 * P.state.duration); seeking = false; });
@@ -929,6 +959,10 @@ function drawBar() {
   const rp = $('btn-repeat'); rp.classList.toggle('on', P.state.repeat !== 'off'); rp.classList.toggle('one', P.state.repeat === 'one');
   rp.style.position = 'relative'; rp.title = 'Repeat: ' + P.state.repeat;
   sourcePill($('bar-source'));
+  $('np-play').innerHTML = P.state.playing ? I.pause : I.play;
+  $('np-play').classList.toggle('loading', P.state.loading);
+  $('np-shuffle').classList.toggle('on', P.state.shuffle);
+  $('np-repeat').classList.toggle('on', P.state.repeat !== 'off'); $('np-repeat').classList.toggle('one', P.state.repeat === 'one'); $('np-repeat').style.position = 'relative';
   document.title = t ? `${t.title} · ${t.artist} — Strand` : 'Strand';
   $('stage').classList.toggle('playing', P.state.playing);
 }
@@ -940,6 +974,12 @@ function drawTime() {
     $('t-pos').textContent = fmt(position);
   }
   $('t-dur').textContent = fmt(duration);
+  const pct = duration ? Math.min(100, position / duration * 100) : 0;
+  $('bar-line').style.setProperty('--v', pct + '%');
+  if (!npSeeking && document.body.classList.contains('np-open')) {
+    npSeek.value = pct * 10; setRange(npSeek, pct);
+    $('np-pos').textContent = fmt(position); $('np-dur').textContent = fmt(duration);
+  }
   panelLyrics.update(position);
   if (!$('stage').hidden) stageLyrics.update(position);
 }
@@ -958,6 +998,14 @@ function drawPanel() {
   const src = $('np-source'); src.replaceChildren();
   if (t) {
     const pill = h('span', { class: 'src-pill' }); sourcePill(pill); src.append(pill);
+    if (isPhone() && spotifyConnected() && !P.state.loading) {
+      if (P.state.provider === 'spotifyRemote') {
+        const alt = P.sourceOrder(t).find(n => n !== 'spotifyRemote');
+        if (alt) src.append(h('button', { class: 'src-pill', onClick: () => P.playCurrentOn(alt) }, 'Play in Strand instead'));
+      } else if (P.state.provider) {
+        src.append(h('button', { class: 'src-pill spotify-app', onClick: () => P.playCurrentOn('spotifyRemote') }, h('span', { class: 'dot', style: { background: SERVICES.spotify.color } }), 'Play in Spotify app'));
+      }
+    }
     if (P.state.error) src.append(h('div', { class: 'dim', style: { fontSize: '12px', width: '100%' } }, P.state.error));
     src.append(h('button', { class: 'src-pill', onClick: () => copy(shareUrl(t)) }, h('span', { html: I.link }), 'Share'));
   }
@@ -1113,7 +1161,7 @@ document.addEventListener('keydown', e => {
   else if (e.key === 'ArrowLeft') P.seek(Math.max(0, P.state.position - 5000));
   else if (e.key.toLowerCase() === 'l') ($('stage').hidden ? openStage() : closeStage());
   else if (e.key === '/') { e.preventDefault(); go('#/search'); }
-  else if (e.key === 'Escape') { hideMenu(); if (!$('stage').hidden) closeStage(); document.body.classList.remove('panel-open'); }
+  else if (e.key === 'Escape') { hideMenu(); closeSheet(); if (!$('stage').hidden) closeStage(); document.body.classList.remove('panel-open'); }
 });
 
 // ---------------------------------------------------------------- boot
@@ -1128,7 +1176,7 @@ document.addEventListener('keydown', e => {
     cloud.startSync();
     on('remote-update', () => { renderSide(); route(); });
   }
-  renderNav(); renderSide(); drawBar(); drawPanel(); drawPanelBody(); panelLyrics.set(null);
+  renderNav(); renderTabbar(); renderSide(); drawBar(); drawPanel(); drawPanelBody(); panelLyrics.set(null);
   try {
     const me = await handleSpotifyCallback();
     if (me) toast(`Spotify connected as ${me.display_name || me.id}`);

@@ -1,7 +1,7 @@
 // One queue, many sources. For each track we try sources in preference order and
 // fall back automatically (e.g. Spotify → Apple Music → YouTube → 30s preview).
 import { settings, setSetting, emit, pushRecent } from './store.js';
-import { createSpotify } from './providers/spotify.js';
+import { createSpotify, createSpotifyRemote } from './providers/spotify.js';
 import { createApple } from './providers/apple.js';
 import { createYouTube } from './providers/youtube.js';
 import { createSoundCloud } from './providers/soundcloud.js';
@@ -14,6 +14,7 @@ const ctx = {
 
 export const providers = {
   spotify: createSpotify(ctx),
+  spotifyRemote: createSpotifyRemote(ctx),
   apple: createApple(ctx),
   youtube: createYouTube(ctx),
   soundcloud: createSoundCloud(ctx),
@@ -37,19 +38,23 @@ export function sourceOrder(t) {
   if (settings.preferred !== 'auto') list.push(settings.preferred);
   if (native) list.push(native);
   list.push(...FULL, 'soundcloud', 'preview');
+  // Phones: Spotify's in-page player can't run there. "Play in Spotify app" puts the
+  // remote first; otherwise Spotify songs play inside Strand via YouTube.
+  if (settings.phoneSpotify === 'app') list.unshift('spotifyRemote');
   list = [...new Set(list)];
   return list.filter(n => providers[n].available() && providers[n].canPlay(t));
 }
 
 let loadToken = 0;
 
-async function playTrack(t) {
+async function playTrack(t, force = null) {
   const my = ++loadToken;
   if (state.provider) { try { providers[state.provider].stop(); } catch {} }
   Object.assign(state, { track: t, loading: true, error: null, playing: false, position: 0, duration: t.durationMs || 0, provider: null, score: null });
   emit('track', t);
   const errors = [];
-  for (const name of sourceOrder(t)) {
+  const order = force ? [force, ...sourceOrder(t).filter(n => n !== force)] : sourceOrder(t);
+  for (const name of order) {
     const p = providers[name];
     state.trying = name; emit('trying', name);
     try {
@@ -72,6 +77,13 @@ async function playTrack(t) {
   Object.assign(state, { loading: false, trying: null, error: errors.join(' · ') || 'No source can play this track' });
   emit('track', t);
   emit('toast', 'Couldn’t play “' + t.title + '” — ' + (errors[0] || 'no source available'));
+}
+
+// Replay the current song from a specific source (e.g. "Play in Spotify app").
+export function playCurrentOn(name) {
+  if (!state.track) return;
+  const pos = state.position;
+  return playTrack(state.track, name).then(() => { if (state.provider === name && pos > 3000) seek(pos); });
 }
 
 export function playQueue(tracks, i = 0) {

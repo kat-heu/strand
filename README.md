@@ -86,6 +86,16 @@ Pick a current tag from https://github.com/castlabs/electron-releases/releases. 
 2. Add your domain to the YouTube key's allowed referrers. If you used the optional `origin` argument when making the Apple token, add the domain there too.
 3. Put the domain in **Settings → Public URL for share links**, so links you share open the hosted version.
 
+## Phones
+
+The web version is published to **https://kat-heu.github.io/strand/** on every push to `main` (workflow `pages.yml`; one-time setup: Settings → Pages → Source: GitHub Actions).
+
+- **iPhone:** open it in Safari → Share → Add to Home Screen.
+- **Android:** install `Strand-<version>.apk` from the latest release. It's a Trusted Web Activity (`android/`) that opens the site full-screen in Chrome, so it updates whenever the site does.
+  - To sign every build with the same key, add the repository secrets `ANDROID_KEYSTORE_B64` and `ANDROID_KEYSTORE_PASSWORD` (key alias `strand`).
+  - To hide Chrome's address bar, publish the `assetlinks.json` shown in the Android workflow's summary at `https://kat-heu.github.io/.well-known/assetlinks.json` (a repo named `kat-heu.github.io` with GitHub Pages on).
+- Phones can't run Spotify's in-browser player, so Spotify songs play through YouTube inside Strand by default. "Play in Spotify app" (or Settings → On phones, Spotify songs play…) hands playback to the Spotify app instead, with Strand as the remote.
+
 ## How it's organised
 
 ```

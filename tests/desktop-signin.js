@@ -15,7 +15,7 @@ const J = (r, d, status = 200) => r.fulfill({ status, contentType: 'application/
   const { start } = require(path.join(__dirname, '..', 'server.js')); await start(5176, '127.0.0.1', { onAuth: () => focused++ });
   const b = await chromium.launch();
   const ctx = await b.newContext({ userAgent: 'Mozilla/5.0 Strand/0.1.7 Chrome/130 Electron/33.2.0 Safari/537.36', viewport: { width: 1300, height: 850 } });
-  const cfg = fs.readFileSync(path.join(__dirname, '..', 'public', 'config.js'), 'utf8').replace(/supabase(Url|Key): '[^']*'/g, "supabase$1: ''");
+  const cfg = fs.readFileSync(path.join(__dirname, '..', 'public', 'config.js'), 'utf8').replace(/supabase(Url|Key): '[^']*'/g, "supabase$1: ''").replace(/youtubeKey: '[^']*'/, "youtubeKey: ''");
   await ctx.route('**/config.js', r => r.fulfill({ contentType: 'text/javascript', body: cfg }));
   await ctx.route(/itunes\.apple|lrclib|fonts\.g|rss\.apple/, r => J(r, { results: [], feed: { results: [] } }));
   let googleAuthUrl = null;

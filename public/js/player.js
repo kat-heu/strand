@@ -64,6 +64,9 @@ export function sourceOrder(t) {
   let list = [];
   if (t.origin === 'soundcloud') list.push('soundcloud');      // SoundCloud-only uploads rarely exist elsewhere
   if (settings.preferred !== 'auto') list.push(settings.preferred);
+  // "Automatic": play inside Strand through YouTube first (also for Spotify songs),
+  // then the song's own service.
+  else list.push('youtube');
   if (native) list.push(native);
   // After the in-app players, hand the song to the Spotify app (full length, needs
   // Premium) before falling back to 30-second previews.

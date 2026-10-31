@@ -25,7 +25,7 @@ const TONE = wav(30, 220);
   const { start } = require(path.join(__dirname, '..', 'server.js')); await start(5178);
   const b = await chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required'] });
   const ctx = await b.newContext({ ...devices['iPhone 13'] });
-  const cfg = fs.readFileSync(path.join(__dirname, '..', 'public', 'config.js'), 'utf8').replace(/supabase(Url|Key): '[^']*'/g, "supabase$1: ''");
+  const cfg = fs.readFileSync(path.join(__dirname, '..', 'public', 'config.js'), 'utf8').replace(/supabase(Url|Key): '[^']*'/g, "supabase$1: ''").replace(/youtubeKey: '[^']*'/, "youtubeKey: ''");
   await ctx.route('**/config.js', r => r.fulfill({ contentType: 'text/javascript', body: cfg }));
   const song = i => ({ wrapperType: 'track', trackId: 3000 + i, trackName: ['Glass Hours', 'Neon Rivers', 'Satellite Heart', 'Quiet Engines', 'After the Static'][i % 5], artistName: 'Nova Lane', artistId: 77, collectionId: 500, collectionName: 'Night Drive', artworkUrl100: '', trackTimeMillis: 200000, previewUrl: 'https://audio.test/p' + i + '.wav', trackNumber: i + 1, discNumber: 1, releaseDate: '2024-01-01' });
   await ctx.route('https://itunes.apple.com/**', r => {

@@ -934,7 +934,7 @@ views.settings = v => {
 
   // Playback
   const pref = h('select', { class: 'input', onChange: e => { setSetting('preferred', e.target.value); toast('Saved'); } },
-    [['auto', 'Automatic (best available)'], ['spotify', 'Spotify first'], ['apple', 'Apple Music first'], ['youtube', 'YouTube first'], ['preview', 'Previews only']].map(([k, l]) => h('option', { value: k, selected: settings.preferred === k }, l)));
+    [['auto', 'Automatic (plays in Strand via YouTube first)'], ['spotify', 'Spotify first'], ['apple', 'Apple Music first'], ['youtube', 'YouTube first'], ['preview', 'Previews only']].map(([k, l]) => h('option', { value: k, selected: settings.preferred === k }, l)));
   const country = h('input', { class: 'input', value: settings.country, maxlength: 2, style: { maxWidth: '90px', textTransform: 'uppercase' } });
   country.addEventListener('change', () => { setSetting('country', country.value.trim().toLowerCase() || 'us'); toast('Saved'); });
   s.append(h('section', { class: 'svc-card' },

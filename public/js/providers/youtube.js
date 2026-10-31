@@ -4,6 +4,27 @@
 import { settings, cacheGet, cacheSet } from '../store.js';
 import { decodeEntities, coverage } from '../util.js';
 import { ytFetch, googleActive } from './google.js';
+import { cloudEnabled, currentUser, supabaseBase, supabaseKey, accessToken } from '../cloud.js';
+import { norm } from '../util.js';
+
+// Song → YouTube video matches shared by everyone using Strand (table song_matches),
+// so each song is only searched once across all users — Google allows ~100 searches a day.
+const matchKey = t => (norm(t.artist).split(' ').slice(0, 4).join(' ') + '|' + norm(t.title)).slice(0, 200);
+async function sharedGet(t) {
+  if (!cloudEnabled() || !currentUser()) return null;
+  try {
+    const r = await fetch(`${supabaseBase()}/rest/v1/song_matches?select=video_id,score&key=eq.${encodeURIComponent(matchKey(t))}`, { headers: { apikey: supabaseKey(), Authorization: 'Bearer ' + await accessToken() } });
+    if (!r.ok) return null;
+    const [row] = await r.json();
+    return row ? { id: row.video_id, score: row.score } : null;
+  } catch { return null; }
+}
+async function sharedPut(t, m) {
+  if (!cloudEnabled() || !currentUser()) return;
+  try {
+    await fetch(`${supabaseBase()}/rest/v1/song_matches?on_conflict=key`, { method: 'POST', headers: { apikey: supabaseKey(), Authorization: 'Bearer ' + await accessToken(), 'Content-Type': 'application/json', Prefer: 'resolution=ignore-duplicates' }, body: JSON.stringify({ key: matchKey(t), video_id: m.id, score: m.score }) });
+  } catch {}
+}
 
 let apiReady;
 function loadApi() {
@@ -87,6 +108,8 @@ export function createYouTube(ctx) {
     if (t.ids?.youtube) return { id: t.ids.youtube, score: null };
     const cached = cacheGet('yt', t.key);
     if (cached) return cached;
+    const shared = await sharedGet(t);
+    if (shared) { cacheSet('yt', t.key, shared); return shared; }
     const want = { title: t.title, artist: t.artist };
     const res = await ytSearch(`${t.artist} ${t.title} audio`, 5);
     let best = null, score = 0;
@@ -99,6 +122,7 @@ export function createYouTube(ctx) {
     if (!best || score < 0.5) throw new Error('no good YouTube match');
     const out = { id: best.videoId, score: Math.min(1, score) };
     cacheSet('yt', t.key, out);
+    sharedPut(t, out);
     return out;
   }
 

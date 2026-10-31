@@ -30,7 +30,7 @@ function wav(sec = 3, rate = 8000) {
   const xmlFile = path.join(dir, 'Library.xml'); fs.writeFileSync(xmlFile, XML);
   const { start } = require(path.join(__dirname, '..', 'server.js')); await start(5175);
   const b = await chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required'] });
-  const cfg = fs.readFileSync(path.join(__dirname, '..', 'public', 'config.js'), 'utf8').replace(/supabase(Url|Key): '[^']*'/g, "supabase$1: ''");
+  const cfg = fs.readFileSync(path.join(__dirname, '..', 'public', 'config.js'), 'utf8').replace(/supabase(Url|Key): '[^']*'/g, "supabase$1: ''").replace(/youtubeKey: '[^']*'/, "youtubeKey: ''");
   const setup = async ctx => {
     await ctx.route('**/config.js', r => r.fulfill({ contentType: 'text/javascript', body: cfg }));
     await ctx.route(/itunes\.apple\.com/, r => r.fulfill({ contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': '*' }, body: JSON.stringify({ results: [{ wrapperType: 'track', trackId: 1, trackName: 'Glass Hours', artistName: 'Nova Lane', collectionName: 'Night Drive', artworkUrl100: '', trackTimeMillis: 200000, previewUrl: 'https://audio.test/p.wav' }] }) }));

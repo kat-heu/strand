@@ -10,7 +10,7 @@ function wav(sec = 2, rate = 8000) {
   const { start } = require(require('path').join(__dirname, '..', 'server.js')); await start(5197);
   const b = await chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required'] });
   const ctx = await b.newContext({ ...devices['iPhone 13'] });
-  const cfg = fs.readFileSync(require('path').join(__dirname, '..', 'public', 'config.js'), 'utf8').replace(/supabase(Url|Key): '[^']*'/g, "supabase$1: ''");
+  const cfg = fs.readFileSync(require('path').join(__dirname, '..', 'public', 'config.js'), 'utf8').replace(/supabase(Url|Key): '[^']*'/g, "supabase$1: ''").replace(/youtubeKey: '[^']*'/, "youtubeKey: ''");
   await ctx.route('**/config.js', r => r.fulfill({ contentType: 'text/javascript', body: cfg }));
   await ctx.route('https://itunes.apple.com/**', r => r.fulfill({ status: 403, body: 'rate limited' }));
   await ctx.route(/fonts\.g|lrclib|rss\./, r => r.abort());

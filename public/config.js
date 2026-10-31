@@ -14,7 +14,7 @@ export default {
 
   // Optional YouTube Data API key — lets people who haven't signed in with Google
   // still play songs via YouTube. Restrict it to your domain in Google Cloud.
-  youtubeKey: '',
+  youtubeKey: 'AIzaSyCkhgB0z1_9_-YiZ68qb2TQ1f91Tff-bQk',   // restricted to Strand's web addresses + YouTube Data API only
 
   // Strand accounts (Supabase). Project URL + publishable ("anon") key — both public.
   // Leave empty to run Strand without accounts.

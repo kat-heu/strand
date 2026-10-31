@@ -98,7 +98,7 @@ const MOCK_GIS = `window.google={accounts:{oauth2:{initTokenClient(c){ window.__
   await p.route('https://lrclib.net/**', r => J(r, { syncedLyrics: lrc, plainLyrics: 'x' }));
   await p.route('https://fonts.googleapis.com/**', r => r.abort());
   // These tests cover the app itself, so run with Strand accounts switched off.
-  const cfgNoAccounts = fs.readFileSync(path.join(__dirname, '..', 'public', 'config.js'), 'utf8').replace(/supabase(Url|Key): '[^']*'/g, "supabase$1: ''");
+  const cfgNoAccounts = fs.readFileSync(path.join(__dirname, '..', 'public', 'config.js'), 'utf8').replace(/supabase(Url|Key): '[^']*'/g, "supabase$1: ''").replace(/youtubeKey: '[^']*'/, "youtubeKey: ''");
   await ctx.route('**/config.js', r => r.fulfill({ contentType: 'text/javascript', body: cfgNoAccounts }));
   await p.route('https://sdk.scdn.co/**', r => r.fulfill({ contentType: 'text/javascript', body: MOCK_SP_SDK }));
   await p.route('https://www.youtube.com/iframe_api', r => r.fulfill({ contentType: 'text/javascript', body: MOCK_YT }));

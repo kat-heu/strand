@@ -1,6 +1,6 @@
 name: Build desktop apps
 
-# Builds Windows (.exe), macOS (.dmg) and Linux (.AppImage) installers and
+# Builds Windows (.exe) and macOS (.dmg) installers and
 # publishes them as a GitHub Release named after the version in package.json.
 #
 # Runs on every push to main, but only builds when that version has no
@@ -50,13 +50,11 @@ jobs:
           |---|---|
           | **Windows** | `Strand-Setup-*.exe` |
           | **macOS** | `Strand-*.dmg` |
-          | **Linux** | `Strand-*.AppImage` |
           | **Android** | `Strand-*.apk` |
 
           These builds aren't code-signed yet, so the first launch shows a warning:
           - **Windows:** "Windows protected your PC" → **More info** → **Run anyway**.
           - **macOS:** right-click the app → **Open** → **Open**.
-          - **Linux:** make the AppImage executable (`chmod +x`), then run it.
           - **Android:** open the .apk on your phone and allow "Install unknown apps" for your browser when asked.
 
           **iPhone:** open https://kat-heu.github.io/strand/strand.mobileconfig in Safari → **Allow**, then Settings app → **Profile Downloaded** → **Install**.
@@ -71,7 +69,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest, ubuntu-latest]
+        os: [windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4

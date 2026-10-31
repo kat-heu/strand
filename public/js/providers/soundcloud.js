@@ -51,7 +51,11 @@ export async function scResolve(url, onProgress) {
     }
     const current = await new Promise(r => w.getCurrentSound(r));
     const isSet = /\/sets\//.test(url) || sounds.length > 1;
-    return { name: isSet ? (current?.title && sounds.length === 1 ? current.title : 'SoundCloud set') : current?.title, tracks: sounds.map(scToTrack) };
+    // Remember which list each song came from: playing the list in one widget lets
+    // SoundCloud go from song to song itself (phones block starting a new widget
+    // without a tap, which made playback stop after one song).
+    const tracks = sounds.map((x, i) => { const t = scToTrack(x); if (sounds.length > 1) Object.assign(t.ids, { scList: url, scIndex: i }); return t; });
+    return { name: isSet ? (current?.title && sounds.length === 1 ? current.title : 'SoundCloud set') : current?.title, tracks };
   } finally {
     iframe.remove();
   }
@@ -59,7 +63,33 @@ export async function scResolve(url, onProgress) {
 
 export function createSoundCloud(ctx) {
   let widget = null, iframe = null, ready = null, pos = 0, dur = 0, playing = false;
+  let loadedUrl = null;          // what the widget currently holds (a song, or a whole list)
+  let listIndex = -1;            // in list mode: which song of the list should be playing
+  let finishT = null;
   const host = () => document.getElementById('media-sc');
+  const E = () => window.SC.Widget.Events;
+
+  function bindAll() {
+    const ev = E();
+    for (const k of ['PLAY_PROGRESS', 'PLAY', 'PAUSE', 'FINISH', 'ERROR']) { try { widget.unbind(ev[k]); } catch {} }
+    widget.bind(ev.PLAY_PROGRESS, e => { pos = e.currentPosition; });
+    widget.bind(ev.PLAY, () => {
+      playing = true; clearTimeout(finishT);
+      widget.getDuration(d => { dur = d; });
+      if (listIndex >= 0 && widget.getCurrentSoundIndex) widget.getCurrentSoundIndex(i => {
+        // SoundCloud moved to the next song of the list by itself: follow it.
+        if (typeof i === 'number' && i !== listIndex && ctx.onAdvancedTo?.(t => t.ids?.scList === loadedUrl && t.ids?.scIndex === i)) { listIndex = i; pos = 0; }
+      });
+    });
+    widget.bind(ev.PAUSE, () => { playing = false; });
+    widget.bind(ev.FINISH, () => {
+      playing = false;
+      // In a list the widget carries on by itself; only step Strand's queue if it doesn't.
+      clearTimeout(finishT);
+      finishT = setTimeout(() => { if (!playing) ctx.onEnded(); }, listIndex >= 0 ? 2500 : 0);
+    });
+    widget.bind(ev.ERROR, () => ctx.onError(new Error('SoundCloud playback error')));
+  }
 
   async function ensure(url) {
     await loadScript(WIDGET_API);
@@ -69,19 +99,15 @@ export function createSoundCloud(ctx) {
     iframe.src = scWidgetSrc(url);
     host().replaceChildren(iframe);
     widget = window.SC.Widget(iframe);
-    const E = window.SC.Widget.Events;
+    loadedUrl = url;
     ready = new Promise((res, rej) => {
-      widget.bind(E.READY, () => res(widget));
+      widget.bind(E().READY, () => { bindAll(); res(widget); });
       setTimeout(() => rej(new Error('SoundCloud timed out')), 20000);
     });
-    widget.bind(E.PLAY_PROGRESS, e => { pos = e.currentPosition; });
-    widget.bind(E.PLAY, () => { playing = true; widget.getDuration(d => { dur = d; }); });
-    widget.bind(E.PAUSE, () => { playing = false; });
-    widget.bind(E.FINISH, () => { playing = false; ctx.onEnded(); });
-    widget.bind(E.ERROR, () => ctx.onError(new Error('SoundCloud playback error')));
     ready.catch(() => { ready = null; });
     return ready;
   }
+  const skipTo = i => new Promise(res => { widget.skip(i); setTimeout(res, 300); });
 
   return {
     name: 'soundcloud',
@@ -90,13 +116,19 @@ export function createSoundCloud(ctx) {
     available: () => true,
     canPlay: t => !!t.ids?.soundcloud,
     async load(t) {
-      const url = t.ids.soundcloud;
+      clearTimeout(finishT);
+      const list = t.ids.scList, idx = t.ids.scIndex;
+      const url = list && Number.isInteger(idx) ? list : t.ids.soundcloud;
       pos = 0; dur = t.durationMs || 0;
       const fresh = !ready;
       await ensure(url);
-      if (!fresh) {
-        await new Promise(res => widget.load(url, { auto_play: true, visual: false, show_artwork: true, hide_related: true, callback: res }));
+      if (!fresh && loadedUrl !== url) {
+        await new Promise(res => widget.load(url, { auto_play: !list, visual: false, show_artwork: true, hide_related: true, callback: res }));
+        loadedUrl = url;
+        bindAll();
       }
+      if (url === list) { listIndex = idx; await skipTo(idx); }
+      else { if (!fresh && loadedUrl === url && listIndex < 0) widget.seekTo(0); listIndex = -1; }
       widget.play();
       return { score: null };
     },
@@ -107,6 +139,6 @@ export function createSoundCloud(ctx) {
     position: () => pos,
     duration: () => dur,
     isPlaying: () => playing,
-    stop: () => { try { widget?.pause(); } catch {} playing = false; },
+    stop: () => { clearTimeout(finishT); try { widget?.pause(); } catch {} playing = false; },
   };
 }

@@ -7,6 +7,7 @@ import { createApple } from './providers/apple.js';
 import { createYouTube } from './providers/youtube.js';
 import { createSoundCloud } from './providers/soundcloud.js';
 import { createPreview } from './providers/preview.js';
+import { createLocal, isLocalHere } from './local.js';
 
 const ctx = {
   onEnded: () => { log('song ended'); next(true); },
@@ -14,6 +15,14 @@ const ctx = {
   // Songs after the current one, in play order (empty when shuffling or repeating one
   // song, because then Strand decides what comes next).
   upcoming: () => (state.shuffle || state.repeat === 'one') ? [] : state.queue.slice(state.index + 1, state.index + 100),
+  // A source moved on by itself (e.g. SoundCloud playing through a list): point
+  // Strand's queue at that song without reloading it. Returns true if found.
+  onAdvancedTo: pred => {
+    const i = state.queue.findIndex((t, k) => k > state.index && pred(t));
+    if (i < 0) return false;
+    ctx.onAdvanced(i - state.index);
+    return true;
+  },
   // The Spotify app moved on to the next song of the list Strand handed it.
   onAdvanced: steps => {
     const i = state.index + steps;
@@ -33,6 +42,7 @@ export const providers = {
   youtube: createYouTube(ctx),
   soundcloud: createSoundCloud(ctx),
   preview: createPreview(ctx),
+  local: createLocal(ctx),
 };
 
 export const state = {
@@ -57,6 +67,7 @@ export function sourceOrder(t) {
   // Phones: Spotify's in-page player can't run there. "Play in Spotify app" puts the
   // remote first; otherwise Spotify songs play inside Strand via YouTube when possible.
   if (settings.phoneSpotify === 'app') list.unshift('spotifyRemote');
+  if (isLocalHere(t)) list.unshift('local');                 // your own file on this device always wins
   list = [...new Set(list)];
   return list.filter(n => providers[n].available() && providers[n].canPlay(t));
 }

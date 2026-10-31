@@ -51,9 +51,10 @@ window.__scSounds = u => [0,1,2].map(i=>({id:900+i,title:(u.includes('likes')?'L
 window.SC = { Widget: Object.assign(function(iframe){
   if (iframe.__w) return iframe.__w;
   const url = new URL(iframe.src).searchParams.get('url');
-  const w = { url, b:{}, bind(e,f){ this.b[e]=f; if(e==='ready') setTimeout(()=>f(),30); },
+  const w = { url, b:{}, idx:0, loads:0, bind(e,f){ this.b[e]=f; if(e==='ready') setTimeout(()=>f(),30); }, unbind(e){ delete this.b[e]; },
+    skip(i){ this.idx=i; }, getCurrentSoundIndex(cb){ cb(this.idx); }, _finishAndAdvance(){ this.b.finish&&this.b.finish(); this.idx++; setTimeout(()=>this.b.play&&this.b.play(),300); }, _finish(){ this.b.finish&&this.b.finish(); },
     getSounds(cb){ cb(window.__scSounds(this.url)); }, getCurrentSound(cb){ cb(window.__scSounds(this.url)[0]); },
-    load(u,o){ this.url=u; setTimeout(()=>o.callback&&o.callback(),20); }, play(){ window.__scPlayed=this.url; this.b.play&&this.b.play(); },
+    load(u,o){ this.url=u; this.loads++; setTimeout(()=>o.callback&&o.callback(),20); }, play(){ window.__scPlayed=this.url; this.b.play&&this.b.play(); },
     pause(){ this.b.pause&&this.b.pause(); }, seekTo(){}, setVolume(){}, getDuration(cb){ cb(180000); } };
   iframe.__w = w; window.__scw = w; return w;
 }, { Events:{READY:'ready',PLAY:'play',PAUSE:'pause',FINISH:'finish',PLAY_PROGRESS:'playProgress',ERROR:'error'} }) };`;
@@ -265,6 +266,11 @@ const MOCK_GIS = `window.google={accounts:{oauth2:{initTokenClient(c){ window.__
   check('SoundCloud set imports', scPl && scPl.tracks.length === 3 && scPl.source === 'soundcloud', JSON.stringify(scPl && scPl.tracks.length));
   await p.getByRole('button', { name: 'Play', exact: true }).click(); await sleep(1500); s = await S();
   check('SoundCloud track plays through widget', s.prov === 'soundcloud' && await p.evaluate(() => document.getElementById('np-media').classList.contains('sc')), JSON.stringify(s));
+  check('SoundCloud set songs remember their list', await p.evaluate(() => strand.library.playlists[0].tracks[1].ids.scIndex === 1 && !!strand.library.playlists[0].tracks[1].ids.scList));
+  await p.evaluate(() => window.__scw._finishAndAdvance()); await sleep(1200); s = await S();
+  check('SoundCloud: next song of the set plays on its own and Strand follows', s.prov === 'soundcloud' && s.idx === 1 && s.title === 'Upload 1' && await p.evaluate(() => window.__scw.loads === 0), JSON.stringify(s));
+  await p.evaluate(() => window.__scw._finish()); await sleep(3200); s = await S();
+  check('SoundCloud: if the widget doesn’t carry on, Strand moves to the next song', s.idx === 2 && s.prov === 'soundcloud', JSON.stringify(s));
 
   // ---------- 3. Accounts: connect Spotify via real redirect flow (token endpoint mocked)
   await p.evaluate(() => { const st = JSON.parse(localStorage.getItem('strand:settings')) || {}; st.spotifyClientId = 'cid'; st.googleClientId = 'gid'; localStorage.setItem('strand:settings', JSON.stringify(st)); });

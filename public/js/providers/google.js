@@ -56,8 +56,40 @@ async function desktopToken(prompt) {
   throw new Error('Google sign-in timed out. Try again.');
 }
 
+// Phones (and Home Screen apps): Google's sign-in popup often can't hand the login
+// back to an installed web app, so go to Google's page and come back instead —
+// the same way Spotify sign-in works.
+const usesRedirect = () => /Android|iPhone|iPod|iPad|Mobile/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent)) || navigator.standalone;
+const RKEY = 'strand:google:redirect';
+export const googleRedirectUri = () => location.origin + location.pathname.replace(/[^/]*$/, '');
+function redirectToken(prompt) {
+  const state = rand();
+  localStorage.setItem(RKEY, JSON.stringify({ state, back: location.hash || '#/me/youtube', at: Date.now() }));
+  const params = { client_id: settings.googleClientId.trim(), redirect_uri: googleRedirectUri(), response_type: 'token', scope: SCOPE, include_granted_scopes: 'true', state };
+  if (prompt) params.prompt = prompt;
+  location.href = 'https://accounts.google.com/o/oauth2/v2/auth?' + new URLSearchParams(params);
+  return new Promise(() => {});                                     // the page is leaving
+}
+// Call at startup: finishes the return from Google's sign-in page.
+// Returns null (nothing to do), { ok: true, back } or { error }.
+export async function finishGoogleRedirect() {
+  const h = location.hash.replace(/^#/, '');
+  if (!/(^|&)(access_token|error)=/.test(h) || !/(^|&)state=/.test(h)) return null;
+  const p = new URLSearchParams(h);
+  let pend = null; try { pend = JSON.parse(localStorage.getItem(RKEY) || 'null'); } catch {}
+  if (!pend || pend.state !== p.get('state')) return null;         // not ours (e.g. another sign-in)
+  localStorage.removeItem(RKEY);
+  history.replaceState(null, '', location.pathname + location.search + pend.back);
+  if (p.get('error')) return { error: p.get('error') === 'access_denied' ? 'Google sign-in was cancelled' : 'Google sign-in failed: ' + p.get('error') };
+  tok = { access: p.get('access_token'), exp: Date.now() + Number(p.get('expires_in') || 3600) * 1000 };
+  save(KEY, tok);
+  try { await loadProfile(); } catch (e) { return { error: e.message }; }
+  return { ok: true, back: pend.back };
+}
+
 function requestToken(prompt) {
   if (isDesktop()) return desktopToken(prompt);
+  if (usesRedirect()) return redirectToken(prompt);
   return new Promise(async (res, rej) => {
     try {
       const oauth2 = await gis();
@@ -82,6 +114,9 @@ function requestToken(prompt) {
 export async function googleLogin() {
   if (!googleConfigured()) throw new Error('The app owner needs to add a Google Client ID (Settings → Developer keys)');
   await requestToken(googleProfile ? '' : 'consent');
+  return loadProfile();
+}
+async function loadProfile() {
   const d = await ytFetch('channels', { part: 'snippet', mine: 'true' });
   const ch = d.items?.[0];
   googleProfile = ch

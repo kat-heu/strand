@@ -186,6 +186,22 @@ const TONE = wav(30, 220);
   await p.evaluate(() => document.querySelector('.main').scrollTo(0, 1500)); await sleep(300);
   check('Top bar shows the playlist name after scrolling', await p.evaluate(() => document.getElementById('mtop').classList.contains('solid') && document.getElementById('mtop-title').textContent === 'Big'));
 
+  // ---- Google / YouTube sign-in on a phone goes to Google's page and comes back
+  let gUrl = null;
+  await ctx.route('https://accounts.google.com/**', r => {
+    gUrl = new URL(r.request().url());
+    const back = gUrl.searchParams.get('redirect_uri') + '#access_token=gtok&token_type=Bearer&expires_in=3599&scope=x&state=' + gUrl.searchParams.get('state');
+    r.fulfill({ status: 302, headers: { Location: back } });
+  });
+  await ctx.route('https://www.googleapis.com/youtube/v3/channels**', r => J(r, { items: [{ id: 'UC1', snippet: { title: 'Kat on YouTube', thumbnails: {} } }] }));
+  await p.evaluate(() => { location.hash = '#/me'; }); await sleep(600);
+  await p.evaluate(() => import('/js/accounts.js').then(m => { m.ACCOUNTS.youtube.connect(); }));
+  await p.waitForURL(u => !u.href.includes('accounts.google') && !u.hash.includes('access_token'), { timeout: 10000 }).catch(() => {});
+  await sleep(2000);
+  check('Phone Google sign-in uses Google’s page (no popup) and returns to Strand', !!gUrl && gUrl.searchParams.get('response_type') === 'token' && gUrl.searchParams.get('redirect_uri') === BASE, gUrl && gUrl.searchParams.get('redirect_uri'));
+  check('…and YouTube is connected afterwards', await p.evaluate(() => import('/js/providers/google.js').then(m => m.googleLinked() && m.googleActive() && m.googleProfile.name === 'Kat on YouTube')));
+  check('…and the address no longer holds the sign-in token', !p.url().includes('access_token'), p.url());
+
   // ---- the phone version updates itself
   let ver = 'aaa111';
   await ctx.route('**/version.json*', r => J(r, { version: ver }));

@@ -103,8 +103,9 @@ jobs:
 
   publish:
     needs: [check, build, android]
-    # Desktop updates go out even if the Android build has a problem.
-    if: always() && needs.build.result == 'success'
+    # Publish as long as the Windows installer made it (a macOS/Linux/Android hiccup
+    # shouldn't hold back updates for everyone else).
+    if: always() && needs.check.outputs.needed == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Publish the release
@@ -115,9 +116,12 @@ jobs:
           # Fixed-name copies, so the README's download links always get the newest version.
           # (The auto-updater keeps using the versioned files listed in latest.yml.)
           mkdir -p fixed && cd fixed
-          gh release download "v$V" --repo "$GITHUB_REPOSITORY" -p "Strand-Setup-$V.exe" -p "Strand-$V.apk" || true
-          [ -f "Strand-Setup-$V.exe" ] && mv "Strand-Setup-$V.exe" Strand-Setup.exe
-          [ -f "Strand-$V.apk" ] && mv "Strand-$V.apk" Strand.apk
-          ls -la
-          for f in Strand-Setup.exe Strand.apk; do [ -f "$f" ] && gh release upload "v$V" "$f" --clobber --repo "$GITHUB_REPOSITORY"; done
+          gh release download "v$V" --repo "$GITHUB_REPOSITORY" -p "Strand-Setup-$V.exe" -p "Strand-$V.apk" -p "latest.yml" || true
+          if [ ! -f "Strand-Setup-$V.exe" ] || [ ! -f latest.yml ]; then
+            echo "::error::The Windows installer wasn't built, so this version isn't published."
+            exit 1
+          fi
+          mv "Strand-Setup-$V.exe" Strand-Setup.exe
+          gh release upload "v$V" Strand-Setup.exe --clobber --repo "$GITHUB_REPOSITORY"
+          if [ -f "Strand-$V.apk" ]; then mv "Strand-$V.apk" Strand.apk; gh release upload "v$V" Strand.apk --clobber --repo "$GITHUB_REPOSITORY"; fi
           gh release edit "v$V" --repo "$GITHUB_REPOSITORY" --draft=false --latest

@@ -2,6 +2,7 @@ import { h, fmt, debounce, b64urlEncode, b64urlDecode, jsonp } from './util.js';
 const songs = n => `${n.toLocaleString()} song${n === 1 ? '' : 's'}`;
 import { startUpdates, checkForUpdate, currentVersion } from './webupdate.js';
 import { logLines, clearLog } from './log.js';
+import { initLocal, addLocalFiles, removeLocal, localPlaylist, isLiveBlob, isLocalHere, LOCAL_ID } from './local.js';
 import { askText, askConfirm, showText } from './ui.js';
 import { I, SERVICES } from './icons.js';
 import { settings, setSetting, fromConfig, library, saveLibrary, isLiked, toggleLike, on, emit, clearCaches } from './store.js';
@@ -16,7 +17,7 @@ import {
 } from './providers/spotify.js';
 import { appleConfigured, appleAuthorized, appleAuthorize, appleUnauthorize, appleInit } from './providers/apple.js';
 import { ytSearch, ytToTrack } from './providers/youtube.js';
-import { googleActive } from './providers/google.js';
+import { googleActive, finishGoogleRedirect } from './providers/google.js';
 import { ACCOUNTS, ORDER, anyLinked, remoteCollection, clearRemoteCache, isSavedScPlaylist, removeSoundCloudPlaylist } from './accounts.js';
 import * as cloud from './cloud.js';
 
@@ -65,7 +66,7 @@ function hideMenu() { menu.hidden = true; document.body.classList.remove('menu-o
 document.addEventListener('pointerdown', e => { if (!menu.hidden && !menu.contains(e.target)) hideMenu(); });
 
 // ---------------------------------------------------------------- helpers
-const img = (src, cls = '', alt = '') => src ? h('img', { src, class: cls, alt, loading: 'lazy' }) : h('div', { class: 'ph ' + cls, html: I.disc });
+const img = (src, cls = '', alt = '') => src && !(src.startsWith('blob:') && !isLiveBlob(src)) ? h('img', { src, class: cls, alt, loading: 'lazy' }) : h('div', { class: 'ph ' + cls, html: I.disc });
 const svcDot = name => h('span', { class: 'svc', style: { background: SERVICES[name]?.color || 'var(--dim)' }, title: SERVICES[name]?.label });
 
 function shareUrl(t) {
@@ -90,6 +91,7 @@ function trackMenu(anchor, t) {
   if (t.artistId) items.push({ label: 'Go to artist', icon: I.search, onClick: () => go(`#/artist/${t.artistId}`) });
   else items.push({ label: 'Find artist', icon: I.search, onClick: () => go(`#/search/${encodeURIComponent(t.artist)}`) });
   if (t.albumId) items.push({ label: 'Go to album', icon: I.disc.replace(/40/g, '18'), onClick: () => go(`#/album/${t.albumId}`) });
+  if (t.ids?.local) items.push('-', { label: isLocalHere(t) ? 'Remove file from this device' : 'Remove from On this device', icon: I.trash, onClick: async () => { if (await askConfirm(`Remove “${t.title}”?`, { message: 'The file is deleted from Strand on this device. The original on your device or computer isn’t touched.', okLabel: 'Remove', danger: true })) { await removeLocal(t); toast('Removed'); if (location.hash === '#/playlist/' + LOCAL_ID) route(); } } });
   showMenu(anchor, items, { title: t.title, sub: t.artist, art: t.artwork });
 }
 function playlistPicker(anchor, t) {
@@ -105,6 +107,23 @@ function playlistPicker(anchor, t) {
     ...(library.playlists.length ? ['-', { group: library.playlists.map(pl => ({ label: pl.name, onClick: () => add(pl) })) }] : []),
   ]);
 }
+// Pick music files from this device and add them to "On this device".
+function pickLocalFiles() {
+  const input = h('input', { type: 'file', multiple: true, accept: 'audio/*,.mp3,.m4a,.aac,.wav,.flac,.ogg,.opus,.aiff', style: { display: 'none' } });
+  input.addEventListener('change', async () => {
+    const files = [...input.files]; input.remove();
+    if (!files.length) return;
+    toast(`Adding ${files.length} file${files.length === 1 ? '' : 's'}…`);
+    try {
+      const r = await addLocalFiles(files, (n, total) => { if (n && n % 5 === 0 && n < total) toast(`Adding songs… ${n} of ${total}`); });
+      toast([r.added && `Added ${songs(r.added)}`, r.skipped && `${r.skipped} already added`, r.ignored && `${r.ignored} weren’t music files`].filter(Boolean).join(' · ') || 'Nothing added');
+      go('#/playlist/' + LOCAL_ID);
+    } catch (e) { toast('Couldn’t add those files: ' + (e?.message || e)); }
+  });
+  document.body.append(input);
+  input.click();
+}
+
 function newPlaylist(name, tracks, extra = {}) {
   const pl = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name, tracks, created: Date.now(), ...extra };
   library.playlists.unshift(pl); saveLibrary();
@@ -222,7 +241,7 @@ views.home = async v => {
     v.append(h('div', { class: 'svc-card', style: { marginTop: '22px' } },
       h('header', {}, h('h3', {}, 'Link your music accounts')),
       h('p', {}, 'Connect Spotify, Apple Music, YouTube Music or SoundCloud to see your playlists and likes here and play full-length songs. Until then, songs play as 30-second previews.'),
-      h('div', { class: 'inline' }, h('a', { class: 'btn primary small', href: '#/me' }, 'Link accounts'), h('a', { class: 'btn small ghost', href: '#/import' }, 'Import a playlist link'))));
+      h('div', { class: 'inline' }, h('a', { class: 'btn primary small', href: '#/me' }, 'Link accounts'), h('a', { class: 'btn small ghost', href: '#/import' }, 'Import a playlist link'), h('button', { class: 'btn small ghost', onClick: pickLocalFiles }, 'Add your music files'))));
   } else {
     ORDER.filter(k => ACCOUNTS[k].linked()).slice(0, 2).forEach(k =>
       v.append(renderSection(k, ACCOUNTS[k].sections[0], { limit: 6, title: [svcDot(k), `From ${ACCOUNTS[k].label}`], more: `#/me/${k}` })));
@@ -396,8 +415,9 @@ function playlistView(v, pl, { liked = false } = {}) {
       h('div', { class: 'row-actions', style: { marginTop: '6px' } },
         h('button', { class: 'btn primary', disabled: !pl.tracks.length, onClick: () => P.playQueue(pl.tracks, 0) }, h('span', { html: I.play }), 'Play'),
         h('button', { class: 'btn', disabled: !pl.tracks.length, onClick: () => { P.state.shuffle = true; emit('state'); P.playQueue(pl.tracks, Math.floor(Math.random() * pl.tracks.length)); } }, h('span', { html: I.shuffle }), 'Shuffle'),
-        !liked ? h('button', { class: 'btn ghost', onClick: async () => { const n = await askText('Rename playlist', { value: pl.name }); if (n) { pl.name = n; saveLibrary(); route(); } } }, 'Rename') : null,
-        !liked ? h('button', { class: 'btn ghost', onClick: async () => { if (await askConfirm(`Delete “${pl.name}”?`, { message: 'This removes the playlist from Strand only.', okLabel: 'Delete', danger: true })) { library.playlists = library.playlists.filter(x => x !== pl); saveLibrary(); go('#/library'); } } }, h('span', { html: I.trash }), 'Delete') : null)));
+        pl.id === LOCAL_ID ? h('button', { class: 'btn ghost', onClick: pickLocalFiles }, h('span', { html: I.plus }), 'Add files') : null,
+        !liked && pl.id !== LOCAL_ID ? h('button', { class: 'btn ghost', onClick: async () => { const n = await askText('Rename playlist', { value: pl.name }); if (n) { pl.name = n; saveLibrary(); route(); } } }, 'Rename') : null,
+        !liked && pl.id !== LOCAL_ID ? h('button', { class: 'btn ghost', onClick: async () => { if (await askConfirm(`Delete “${pl.name}”?`, { message: 'This removes the playlist from Strand only.', okLabel: 'Delete', danger: true })) { library.playlists = library.playlists.filter(x => x !== pl); saveLibrary(); go('#/library'); } } }, h('span', { html: I.trash }), 'Delete') : null)));
   if (art) hero.style.setProperty('--hero-img', `url("${art}")`);
   v.append(hero, h('div', { style: { marginTop: '20px' } }, pl.tracks.length ? trackRows(pl.tracks) : h('div', { class: 'empty' }, 'No songs yet — use “Add to playlist” from any track menu.')));
 }
@@ -412,7 +432,8 @@ views.library = v => {
   v.append(h('div', { class: 'eyebrow' }, 'Library'), h('h1', {}, 'Your library'),
     h('div', { class: 'row-actions' },
       h('button', { class: 'btn', onClick: async () => { const n = await askText('New playlist', { value: 'My playlist', okLabel: 'Create' }); if (n) { const pl = newPlaylist(n, []); go(`#/playlist/${pl.id}`); } } }, h('span', { html: I.plus }), 'New playlist'),
-      h('a', { class: 'btn ghost', href: '#/import' }, h('span', { html: I.import }), 'Import')));
+      h('a', { class: 'btn ghost', href: '#/import' }, h('span', { html: I.import }), 'Import'),
+      h('button', { class: 'btn ghost', onClick: pickLocalFiles }, h('span', { html: I.plus }), 'Add your music files')));
   const linked = ORDER.filter(k => ACCOUNTS[k].linked());
   if (!library.playlists.length && !library.liked.length && !linked.length) {
     v.append(h('div', { class: 'empty' }, h('h3', {}, 'Nothing here yet'), h('div', {}, 'Link Spotify, YouTube Music or SoundCloud in Your music, like songs with the heart, or import a playlist.')));
@@ -1287,6 +1308,10 @@ document.addEventListener('visibilitychange', () => {
 
 
 (async function boot() {
+  // Back from Google's sign-in page (phones)?
+  const g = await finishGoogleRedirect().catch(e => ({ error: e.message }));
+  if (g?.error) setTimeout(() => toast(g.error), 600);
+  else if (g?.ok) setTimeout(() => toast('YouTube connected'), 600);
   // Strand accounts: when configured, you must sign in before using the app.
   if (cloud.cloudEnabled()) {
     try { if (await cloud.finishProviderRedirect()) return; } catch (e) { return authScreen('signin', e.message); }
@@ -1297,6 +1322,7 @@ document.addEventListener('visibilitychange', () => {
     cloud.startSync();
     on('remote-update', () => { renderSide(); route(); });
   }
+  await initLocal();
   renderNav(); renderTabbar(); renderSide(); drawBar(); drawPanel(); drawPanelBody(); panelLyrics.set(null);
   try {
     const me = await handleSpotifyCallback();

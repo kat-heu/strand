@@ -193,7 +193,7 @@ const TONE = wav(30, 220);
     const back = gUrl.searchParams.get('redirect_uri') + '#access_token=gtok&token_type=Bearer&expires_in=3599&scope=x&state=' + gUrl.searchParams.get('state');
     r.fulfill({ status: 302, headers: { Location: back } });
   });
-  await ctx.route('https://www.googleapis.com/youtube/v3/channels**', r => J(r, { items: [{ id: 'UC1', snippet: { title: 'Kat on YouTube', thumbnails: {} } }] }));
+  await ctx.route('https://www.googleapis.com/youtube/v3/**', r => r.request().url().includes('/channels') ? J(r, { items: [{ id: 'UC1', snippet: { title: 'Kat on YouTube', thumbnails: {} } }] }) : J(r, { items: [] }));
   await p.evaluate(() => { location.hash = '#/me'; }); await sleep(600);
   await p.evaluate(() => import('/js/accounts.js').then(m => { m.ACCOUNTS.youtube.connect(); }));
   await p.waitForFunction(() => window.strand && import('/js/providers/google.js').then(m => m.googleLinked()), null, { timeout: 15000, polling: 300 }).catch(() => {});

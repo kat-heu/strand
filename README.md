@@ -17,7 +17,7 @@ One music player for **Spotify, Apple Music, YouTube Music and SoundCloud**. It 
 
   Any list plays straight away, and **Save to library** keeps a copy in Strand.
 - **Import** a playlist, album or song from a pasted link on any of the four services
-- **Your own music files:** Library → Add your music files (MP3, M4A, FLAC, WAV…). Title, artist, album and cover come from the file's tags; the files stay on that device
+- **My music (cloud):** Library → Add your music files (MP3, M4A, FLAC, WAV…). Title, artist, album and cover come from the file's tags. Signed-in listeners' songs are saved to a private folder in Supabase Storage and play inside Strand on all their devices (one-time setup: run `supabase/cloud-music.sql`)
 - **iTunes sync:** the desktop app reads the library iTunes keeps (or a file exported from the Music app: File → Library → Export Library…) and plays songs straight from their files; on phones and the web, pick the exported file and songs play from a streaming service
 - Liked songs, your own playlists, recently played, and library export
 - Share links that open a song in Strand, or in any of the four services

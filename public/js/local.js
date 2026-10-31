@@ -2,6 +2,7 @@
 // Strand); only their song details go into your library, so other devices show the
 // songs and play them from a streaming service instead.
 import { library, saveLibrary } from './store.js';
+import { cloudMusicOn, uploadSong, deleteSong } from './cloudmusic.js';
 
 const DB = 'strand-local', STORE = 'files', ART = 'art';
 let dbp = null;
@@ -181,9 +182,10 @@ async function shrinkArt(blob) {
 export function localPlaylist(create = false) {
   let pl = library.playlists.find(p => p.id === LOCAL_ID);
   if (!pl && create) {
-    pl = { id: LOCAL_ID, name: 'On this device', source: 'local', tracks: [], created: Date.now() };
+    pl = { id: LOCAL_ID, name: 'My music', source: 'local', tracks: [], created: Date.now() };
     library.playlists.unshift(pl);
   }
+  if (pl && pl.name === 'On this device') pl.name = 'My music';
   return pl;
 }
 
@@ -192,7 +194,8 @@ export async function addLocalFiles(files, onProgress) {
   const list = [...files].filter(f => f.type.startsWith('audio/') || AUDIO.test(f.name));
   try { await navigator.storage?.persist?.(); } catch {}
   const pl = localPlaylist(true);
-  let added = 0, skipped = 0;
+  let added = 0, skipped = 0, uploaded = 0, uploadError = null;
+  const toCloud = cloudMusicOn();
   for (const [n, f] of list.entries()) {
     onProgress?.(n, list.length, f.name);
     const id = `${f.name}|${f.size}|${f.lastModified}`;
@@ -207,16 +210,42 @@ export async function addLocalFiles(files, onProgress) {
       await put(ART, id, small).catch(() => {});
       artwork = URL.createObjectURL(small); artUrls.set(id, artwork);
     }
-    pl.tracks.push({ key: 'local:' + id, title: tags.title, artist: tags.artist, album: tags.album || '', artwork, durationMs, origin: 'local', ids: { local: id } });
+    const t = { key: 'local:' + id, title: tags.title, artist: tags.artist, album: tags.album || '', artwork, durationMs, origin: 'local', ids: { local: id } };
+    pl.tracks.push(t);
     added++;
+    // Also put it in your Strand cloud, so all your devices can play it.
+    if (toCloud && !uploadError) {
+      onProgress?.(n, list.length, f.name, 'upload');
+      try { Object.assign(t.ids, await uploadSong(f, id, artUrls.has(id) ? await get(ART, id) : null)); uploaded++; }
+      catch (e) { uploadError = e.message; }
+    }
     if (added % 10 === 0) saveLibrary();
   }
   saveLibrary();
   onProgress?.(list.length, list.length, '');
-  return { added, skipped, ignored: files.length - list.length };
+  return { added, skipped, ignored: files.length - list.length, uploaded, uploadError };
 }
 
+// Upload songs added before cloud music was set up (or while offline).
+export async function uploadMissing(onProgress) {
+  const pl = localPlaylist(); if (!pl || !cloudMusicOn()) return { uploaded: 0 };
+  const todo = pl.tracks.filter(t => !t.ids.cloud && here.has(t.ids.local));
+  let uploaded = 0;
+  for (const [n, t] of todo.entries()) {
+    onProgress?.(n, todo.length, t.title);
+    const file = await get(STORE, t.ids.local);
+    if (!file) continue;
+    Object.assign(t.ids, await uploadSong(file, t.ids.local, await get(ART, t.ids.local).catch(() => null)));
+    uploaded++;
+    if (uploaded % 5 === 0) saveLibrary();
+  }
+  saveLibrary();
+  return { uploaded, total: todo.length };
+}
+export const notUploaded = () => (localPlaylist()?.tracks || []).filter(t => !t.ids.cloud && here.has(t.ids.local)).length;
+
 export async function removeLocal(t) {
+  await deleteSong(t);
   const id = t.ids?.local; if (!id) return;
   await del(STORE, id).catch(() => {}); await del(ART, id).catch(() => {});
   here.delete(id);
@@ -236,7 +265,7 @@ export function createLocal(ctx) {
   audio.addEventListener('ended', () => ctx.onEnded());
   return {
     name: 'local',
-    label: 'On this device',
+    label: 'My music',
     available: () => true,
     canPlay: t => isLocalHere(t),
     async load(t) {

@@ -38,11 +38,11 @@ function id3mp3() {
   const [fc] = await Promise.all([p.waitForEvent('filechooser'), p.getByRole('button', { name: 'Add your music files' }).click()]);
   await fc.setFiles([f1, f2, f3]); await sleep(3000);
   const pl = await p.evaluate(() => strand.library.playlists.find(x => x.id === 'local'));
-  check('Files go into "On this device"', pl && pl.tracks.length === 2, JSON.stringify(pl && pl.tracks.map(t => t.title)));
+  check('Files go into "My music"', pl && pl.tracks.length === 2, JSON.stringify(pl && pl.tracks.map(t => t.title)));
   check('Title/artist from the file name when there are no tags', pl?.tracks.some(t => t.title === 'Glass Hours' && t.artist === 'Nova Lane'));
   check('Title, artist, album and cover read from ID3 tags', pl?.tracks.some(t => t.title === 'Neon Rivers' && t.artist === 'Ivy Marlow' && t.album === 'Night Drive' && t.artwork.startsWith('blob:')));
   check('Length read from the file', pl?.tracks.find(t => t.title === 'Glass Hours')?.durationMs > 2500);
-  check('Opens the "On this device" playlist', p.url().endsWith('#/playlist/local') && await p.isVisible('text=On this device'));
+  check('Opens the "My music" playlist', p.url().endsWith('#/playlist/local') && await p.locator('h1', { hasText: 'My music' }).isVisible());
   await p.locator('.row', { hasText: 'Glass Hours' }).dblclick(); await sleep(1500);
   let s = await p.evaluate(() => ({ prov: strand.player.state.provider, playing: strand.player.state.playing, pos: strand.player.state.position }));
   check('Plays from the file on this device', s.prov === 'local' && s.playing, JSON.stringify(s));
@@ -58,7 +58,7 @@ function id3mp3() {
   check('Adding the same file twice doesn’t duplicate it', await p.evaluate(() => strand.library.playlists.find(x => x.id === 'local').tracks.length) === 2);
   // remove
   await p.locator('.row', { hasText: 'Neon Rivers' }).click({ button: 'right' }); await sleep(300);
-  await p.getByRole('button', { name: 'Remove file from this device' }).click(); await sleep(300);
+  await p.getByRole('button', { name: 'Remove from My music' }).click(); await sleep(300);
   await p.locator('.dialog button', { hasText: 'Remove' }).click(); await sleep(800);
   check('Remove deletes it', await p.evaluate(() => strand.library.playlists.find(x => x.id === 'local').tracks.length) === 1);
   // another device (no file here): the song is listed but plays from elsewhere, no broken cover

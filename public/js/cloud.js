@@ -290,3 +290,7 @@ export function startSync() {
 }
 export const syncNow = () => (meta.dirty ? push() : pull());
 export { USER_ID };
+// For other Supabase services (music storage): base URL, public key and a fresh token.
+export const supabaseBase = () => BASE;
+export const supabaseKey = () => KEY;
+export const accessToken = () => token();

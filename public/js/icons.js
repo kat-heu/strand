@@ -43,7 +43,8 @@ export const SERVICES = {
   soundcloud: { label: 'SoundCloud', color: '#ff7a1a' },
   spotifyRemote: { label: 'Spotify app', color: '#1ed760' },
   preview: { label: 'Preview (30s)', color: '#9aa0b4' },
-  local: { label: 'On this device', color: '#3ddc97' },
+  local: { label: 'My music', color: '#3ddc97' },
+  cloud: { label: 'My music (cloud)', color: '#3ddc97' },
   itunes: { label: 'iTunes', color: '#fb5c74' },
   catalog: { label: 'Catalog', color: '#9aa0b4' },
 };

@@ -2,7 +2,8 @@ import { h, fmt, debounce, b64urlEncode, b64urlDecode, jsonp } from './util.js';
 const songs = n => `${n.toLocaleString()} song${n === 1 ? '' : 's'}`;
 import { startUpdates, checkForUpdate, currentVersion, androidShell, androidUpdate, APK_URL } from './webupdate.js';
 import { logLines, clearLog } from './log.js';
-import { initLocal, addLocalFiles, removeLocal, localPlaylist, isLiveBlob, isLocalHere, LOCAL_ID } from './local.js';
+import { initLocal, addLocalFiles, removeLocal, localPlaylist, isLiveBlob, isLocalHere, LOCAL_ID, uploadMissing, notUploaded } from './local.js';
+import { cloudMusicOn, showCloudCovers } from './cloudmusic.js';
 import { initItunes, itunesData, itunesPlaylist, syncItunesXml, syncFromComputer, forgetItunes, desktopItunes, ALL_ID } from './itunes.js';
 import { askText, askConfirm, showText } from './ui.js';
 import { I, SERVICES } from './icons.js';
@@ -92,7 +93,7 @@ function trackMenu(anchor, t) {
   if (t.artistId) items.push({ label: 'Go to artist', icon: I.search, onClick: () => go(`#/artist/${t.artistId}`) });
   else items.push({ label: 'Find artist', icon: I.search, onClick: () => go(`#/search/${encodeURIComponent(t.artist)}`) });
   if (t.albumId) items.push({ label: 'Go to album', icon: I.disc.replace(/40/g, '18'), onClick: () => go(`#/album/${t.albumId}`) });
-  if (t.ids?.local) items.push('-', { label: isLocalHere(t) ? 'Remove file from this device' : 'Remove from On this device', icon: I.trash, onClick: async () => { if (await askConfirm(`Remove “${t.title}”?`, { message: 'The file is deleted from Strand on this device. The original on your device or computer isn’t touched.', okLabel: 'Remove', danger: true })) { await removeLocal(t); toast('Removed'); if (location.hash === '#/playlist/' + LOCAL_ID) route(); } } });
+  if (t.ids?.local) items.push('-', { label: 'Remove from My music', icon: I.trash, onClick: async () => { if (await askConfirm(`Remove “${t.title}”?`, { message: 'It’s removed from Strand on all your devices (and from your Strand cloud). The original file on your phone or computer isn’t touched.', okLabel: 'Remove', danger: true })) { await removeLocal(t); toast('Removed'); if (location.hash === '#/playlist/' + LOCAL_ID) route(); } } });
   showMenu(anchor, items, { title: t.title, sub: t.artist, art: t.artwork });
 }
 function playlistPicker(anchor, t) {
@@ -108,7 +109,7 @@ function playlistPicker(anchor, t) {
     ...(library.playlists.length ? ['-', { group: library.playlists.map(pl => ({ label: pl.name, onClick: () => add(pl) })) }] : []),
   ]);
 }
-// Pick music files from this device and add them to "On this device".
+// Pick music files from this device and add them to "My music" (and your Strand cloud).
 function pickLocalFiles() {
   const input = h('input', { type: 'file', multiple: true, accept: 'audio/*,.mp3,.m4a,.aac,.wav,.flac,.ogg,.opus,.aiff', style: { display: 'none' } });
   input.addEventListener('change', async () => {
@@ -116,8 +117,8 @@ function pickLocalFiles() {
     if (!files.length) return;
     toast(`Adding ${files.length} file${files.length === 1 ? '' : 's'}…`);
     try {
-      const r = await addLocalFiles(files, (n, total) => { if (n && n % 5 === 0 && n < total) toast(`Adding songs… ${n} of ${total}`); });
-      toast([r.added && `Added ${songs(r.added)}`, r.skipped && `${r.skipped} already added`, r.ignored && `${r.ignored} weren’t music files`].filter(Boolean).join(' · ') || 'Nothing added');
+      const r = await addLocalFiles(files, (n, total, name, step) => { if (n && n < total) toast(`${step === 'upload' ? 'Uploading' : 'Adding'} songs… ${n} of ${total}`); });
+      toast([r.added && `Added ${songs(r.added)}`, r.uploaded && 'saved to your cloud — they play on all your devices', r.skipped && `${r.skipped} already added`, r.ignored && `${r.ignored} weren’t music files`, r.uploadError && `not uploaded: ${r.uploadError}`].filter(Boolean).join(' · ') || 'Nothing added');
       go('#/playlist/' + LOCAL_ID);
     } catch (e) { toast('Couldn’t add those files: ' + (e?.message || e)); }
   });
@@ -417,6 +418,11 @@ function playlistView(v, pl, { liked = false, readonly = false } = {}) {
         h('button', { class: 'btn primary', disabled: !pl.tracks.length, onClick: () => P.playQueue(pl.tracks, 0) }, h('span', { html: I.play }), 'Play'),
         h('button', { class: 'btn', disabled: !pl.tracks.length, onClick: () => { P.state.shuffle = true; emit('state'); P.playQueue(pl.tracks, Math.floor(Math.random() * pl.tracks.length)); } }, h('span', { html: I.shuffle }), 'Shuffle'),
         pl.id === LOCAL_ID ? h('button', { class: 'btn ghost', onClick: pickLocalFiles }, h('span', { html: I.plus }), 'Add files') : null,
+        pl.id === LOCAL_ID && cloudMusicOn() && notUploaded() ? h('button', { class: 'btn ghost', onClick: async e => {
+          const b = e.currentTarget; b.disabled = true;
+          try { const r = await uploadMissing((n, total) => { b.textContent = `Uploading ${n + 1} of ${total}…`; }); toast(`${songs(r.uploaded)} saved to your cloud`); route(); }
+          catch (err) { toast('Upload stopped: ' + err.message); b.disabled = false; b.textContent = 'Save to cloud'; }
+        } }, h('span', { html: I.import }), `Save ${notUploaded()} to cloud`) : null,
         readonly ? h('button', { class: 'btn ghost', title: 'Keep a copy in your Strand library, so it shows on your other devices too', onClick: () => { newPlaylist(pl.name, pl.tracks.map(t => ({ ...t, ids: { ...t.ids } })), { source: 'itunes' }); toast('Saved to your library — it’ll show on your other devices'); } }, h('span', { html: I.plus }), 'Save to library') : null,
         !liked && !readonly && pl.id !== LOCAL_ID ? h('button', { class: 'btn ghost', onClick: async () => { const n = await askText('Rename playlist', { value: pl.name }); if (n) { pl.name = n; saveLibrary(); route(); } } }, 'Rename') : null,
         !liked && !readonly && pl.id !== LOCAL_ID ? h('button', { class: 'btn ghost', onClick: async () => { if (await askConfirm(`Delete “${pl.name}”?`, { message: 'This removes the playlist from Strand only.', okLabel: 'Delete', danger: true })) { library.playlists = library.playlists.filter(x => x !== pl); saveLibrary(); go('#/library'); } } }, h('span', { html: I.trash }), 'Delete') : null)));
@@ -884,6 +890,18 @@ views.settings = v => {
           ? 'A new version of the Android app is out. Download it and open the file to update (your music and settings stay).'
           : 'Android app: up to date. Strand itself updates automatically; if the app ever needs a new download, you’ll see a button here.'),
         androidUpdate() ? h('a', { class: 'btn small primary', href: APK_URL }, 'Download Android app') : null) : null));
+  }
+
+  // My music in the cloud
+  {
+    const mine = localPlaylist()?.tracks || [];
+    const inCloud = mine.filter(t => t.ids.cloud).length;
+    s.append(h('section', { class: 'svc-card', id: 'cloud-music' },
+      h('header', {}, h('h3', {}, 'My music'), h('span', { class: 'status' }, cloudMusicOn() ? `${songs(inCloud)} in your cloud` : 'Sign in to Strand to use your cloud')),
+      h('p', {}, 'Songs you add with “Add your music files” are saved to your private Strand cloud, so they play inside Strand on every device you sign in on — your phone, computer and the web.'),
+      h('div', { class: 'inline' },
+        h('button', { class: 'btn small primary', onClick: pickLocalFiles }, 'Add your music files'),
+        h('a', { class: 'btn small ghost', href: '#/playlist/' + LOCAL_ID }, 'Open My music'))));
   }
 
   // iTunes
@@ -1398,6 +1416,10 @@ document.addEventListener('visibilitychange', () => {
   }
   await initLocal();
   await initItunes();
+  // Covers for your cloud songs on devices that don't have the files.
+  const coverAll = () => showCloudCovers([...library.playlists.flatMap(p => p.tracks), ...library.liked, ...library.recent], t => isLocalHere(t) && isLiveBlob(t.artwork)).then(n => { if (n) { renderSide(); if (/^#\/(playlist|library|liked)/.test(location.hash)) route(); } });
+  setTimeout(coverAll, 300);
+  on('remote-update', coverAll);
   // Desktop app: keep the iTunes library current (re-read it quietly at start).
   if (desktopItunes() && itunesData()?.from && itunesData().from !== 'file') setTimeout(() => syncFromComputer().then(r => { if (r) renderSide(); }).catch(() => {}), 4000);
   renderNav(); renderTabbar(); renderSide(); drawBar(); drawPanel(); drawPanelBody(); panelLyrics.set(null);

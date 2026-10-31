@@ -6,6 +6,7 @@ const { app, BrowserWindow, shell, components } = require('electron');
 const path = require('path');
 const { start } = require('../server');
 const { setupAutoUpdates } = require('./updater');
+const itunes = require('./itunes');                // registers strandfile:// (must happen before ready)
 
 const PORT = 5173;
 let mainWin = null;
@@ -73,6 +74,7 @@ app.whenReady().then(async () => {
     }
   }
   setupAutoUpdates();
+  itunes.setup();
   await createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

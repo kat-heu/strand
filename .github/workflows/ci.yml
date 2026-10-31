@@ -25,3 +25,22 @@ jobs:
             grep -E "^(FAIL|CRASH)" test.log | head -10 | while read -r l; do echo "::error title=Test failed::${l//$'\n'/ }"; done
             exit 1
           fi
+
+  desktop:
+    # Runs the real desktop app (Electron) to check the parts the browser tests can't:
+    # playing songs from files on the computer (iTunes library).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --no-audit --no-fund
+      - name: Desktop app check
+        run: |
+          set -o pipefail
+          if ! xvfb-run -a npx electron --no-sandbox tests/electron/smoke.js 2>&1 | tee smoke.log; then
+            grep -E "^(FAIL|CRASH)" smoke.log | head -10 | while read -r l; do echo "::error title=Desktop check failed::$l"; done
+            exit 1
+          fi
+

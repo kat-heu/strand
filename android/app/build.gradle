@@ -5,7 +5,11 @@
 plugins { id 'com.android.application' }
 
 def webHost = 'kat-heu.github.io'
+// Bump android/shell-version only when this Android app itself changes; Strand then
+// tells people with an older copy to download the new one.
+def shellVersion = file('../shell-version').text.trim()
 def webUrl  = 'https://kat-heu.github.io/strand/'
+def launchUrl = webUrl + '?app=android&shell=' + shellVersion
 
 android {
     namespace 'app.strand.player'
@@ -18,7 +22,7 @@ android {
         versionCode = Integer.parseInt(System.getenv('VERSION_CODE') ?: '1')
         versionName = (System.getenv('VERSION_NAME') ?: '0.0.0')
 
-        manifestPlaceholders = [hostName: webHost, defaultUrl: webUrl]
+        manifestPlaceholders = [hostName: webHost, defaultUrl: launchUrl]
         resValue 'string', 'app_name', 'Strand'
         resValue 'string', 'asset_statements',
             "[{ \"relation\": [\"delegate_permission/common.handle_all_urls\"], \"target\": { \"namespace\": \"web\", \"site\": \"https://${webHost}\" } }]"

@@ -10,12 +10,43 @@ let loaded = null, banner = null;
 
 export const currentVersion = () => loaded;
 
+let latest = null;                                   // the whole version.json
 async function remoteVersion() {
   try {
     const r = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });
     if (!r.ok) return null;
-    return (await r.json()).version || null;
+    latest = await r.json();
+    return latest.version || null;
   } catch { return null; }
+}
+
+// ---- Android app (the frame around the website) -----------------------------------
+// The Android app opens Strand with ?app=android&shell=N. Older copies didn't, so
+// they're recognised by the page they were opened from.
+const AKEY = 'strand:androidShell';
+export const APK_URL = 'https://github.com/kat-heu/strand/releases/latest/download/Strand.apk';
+(function noteAndroidApp() {
+  try {
+    const q = new URLSearchParams(location.search);
+    if (q.get('app') === 'android') {
+      localStorage.setItem(AKEY, q.get('shell') || '1');
+      history.replaceState(null, '', location.pathname + location.hash);
+    } else if (/^android-app:\/\/app\.strand\.player/.test(document.referrer) && !localStorage.getItem(AKEY)) {
+      localStorage.setItem(AKEY, '1');
+    }
+  } catch {}
+})();
+export const androidShell = () => { try { return Number(localStorage.getItem(AKEY)) || 0; } catch { return 0; } };
+export const androidUpdate = () => !!(androidShell() && latest?.androidShell && latest.androidShell > androidShell());
+function androidBanner() {
+  if (!androidUpdate() || document.querySelector('.update-banner')) return;
+  const key = 'strand:apkNag:' + latest.androidShell;
+  try { if (localStorage.getItem(key)) return; } catch {}
+  const b = h('div', { class: 'update-banner', role: 'status' },
+    h('span', {}, 'A new Android app is out'),
+    h('a', { class: 'btn small primary', href: APK_URL, onClick: () => { try { localStorage.setItem(key, '1'); } catch {} b.remove(); } }, 'Download'),
+    h('button', { class: 'btn small ghost', onClick: () => { try { localStorage.setItem(key, '1'); } catch {} b.remove(); } }, 'Later'));
+  document.body.append(b);
 }
 
 function reload() {
@@ -28,6 +59,7 @@ function reload() {
 export async function checkForUpdate({ isPlaying = () => false, manual = false } = {}) {
   const v = await remoteVersion();
   if (!v) return manual ? 'offline' : null;
+  androidBanner();
   if (!loaded) { loaded = v; return 'latest'; }
   if (v === loaded) return 'latest';
   if (!isPlaying() || manual) { reload(); return 'updating'; }

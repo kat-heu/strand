@@ -8,6 +8,7 @@ import { createYouTube } from './providers/youtube.js';
 import { createSoundCloud } from './providers/soundcloud.js';
 import { createPreview } from './providers/preview.js';
 import { createLocal, isLocalHere } from './local.js';
+import { createItunes } from './itunes.js';
 
 const ctx = {
   onEnded: () => { log('song ended'); next(true); },
@@ -43,6 +44,7 @@ export const providers = {
   soundcloud: createSoundCloud(ctx),
   preview: createPreview(ctx),
   local: createLocal(ctx),
+  itunes: createItunes(ctx),
 };
 
 export const state = {
@@ -67,6 +69,7 @@ export function sourceOrder(t) {
   // Phones: Spotify's in-page player can't run there. "Play in Spotify app" puts the
   // remote first; otherwise Spotify songs play inside Strand via YouTube when possible.
   if (settings.phoneSpotify === 'app') list.unshift('spotifyRemote');
+  if (providers.itunes.canPlay(t)) list.unshift('itunes');    // iTunes song on this computer: play the file
   if (isLocalHere(t)) list.unshift('local');                 // your own file on this device always wins
   list = [...new Set(list)];
   return list.filter(n => providers[n].available() && providers[n].canPlay(t));

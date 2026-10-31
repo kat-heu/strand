@@ -6,7 +6,7 @@ name: Publish web version (GitHub Pages)
 on:
   push:
     branches: [main]
-    paths: ['public/**', '.github/workflows/pages.yml']
+    paths: ['public/**', 'android/shell-version', '.github/workflows/pages.yml']
   workflow_dispatch:
 
 permissions:
@@ -30,7 +30,8 @@ jobs:
       - name: Stamp the version (phones use it to know an update is out)
         run: |
           V="${GITHUB_SHA::12}"
-          echo "{\"version\":\"$V\",\"built\":\"$(date -u +%FT%TZ)\"}" > public/version.json
+          S=$(cat android/shell-version)
+          echo "{\"version\":\"$V\",\"built\":\"$(date -u +%FT%TZ)\",\"androidShell\":$S}" > public/version.json
           sed -i "s#src=\"js/app.js\"#src=\"js/app.js?v=$V\"#; s#href=\"styles.css\"#href=\"styles.css?v=$V\"#" public/index.html
           cat public/version.json; grep -n "?v=" public/index.html
       - uses: actions/upload-pages-artifact@v3

@@ -1,8 +1,9 @@
 import { h, fmt, debounce, b64urlEncode, b64urlDecode, jsonp } from './util.js';
 const songs = n => `${n.toLocaleString()} song${n === 1 ? '' : 's'}`;
-import { startUpdates, checkForUpdate, currentVersion } from './webupdate.js';
+import { startUpdates, checkForUpdate, currentVersion, androidShell, androidUpdate, APK_URL } from './webupdate.js';
 import { logLines, clearLog } from './log.js';
 import { initLocal, addLocalFiles, removeLocal, localPlaylist, isLiveBlob, isLocalHere, LOCAL_ID } from './local.js';
+import { initItunes, itunesData, itunesPlaylist, syncItunesXml, syncFromComputer, forgetItunes, desktopItunes, ALL_ID } from './itunes.js';
 import { askText, askConfirm, showText } from './ui.js';
 import { I, SERVICES } from './icons.js';
 import { settings, setSetting, fromConfig, library, saveLibrary, isLiked, toggleLike, on, emit, clearCaches } from './store.js';
@@ -405,19 +406,20 @@ views.album = async (v, id) => {
   if (a.copyright) v.append(h('p', { class: 'dim', style: { fontSize: '12px', marginTop: '24px' } }, a.copyright));
 };
 
-function playlistView(v, pl, { liked = false } = {}) {
+function playlistView(v, pl, { liked = false, readonly = false } = {}) {
   const total = pl.tracks.reduce((s, t) => s + (t.durationMs || 0), 0);
   const art = pl.artwork || pl.tracks[0]?.artwork;
   const hero = h('div', { class: 'hero' },
     liked ? h('div', { class: 'hero-art ph', style: { background: 'linear-gradient(135deg,var(--accent),var(--accent-2))', color: '#140a07' }, html: I.heartFill.replace(/18/g, '72') }) : img(art, 'hero-art'),
-    h('div', { class: 'hero-meta' }, h('div', { class: 'eyebrow' }, liked ? 'Collection' : (pl.source ? 'Imported from ' + SERVICES[pl.source].label : 'Playlist')), h('h1', {}, pl.name),
-      h('div', { class: 'sub' }, `${pl.tracks.length} songs · ${Math.round(total / 60000)} min`),
+    h('div', { class: 'hero-meta' }, h('div', { class: 'eyebrow' }, liked ? 'Collection' : readonly ? 'iTunes library' : (pl.source ? 'Imported from ' + SERVICES[pl.source].label : 'Playlist')), h('h1', {}, pl.name),
+      h('div', { class: 'sub' }, `${songs(pl.tracks.length)} · ${Math.round(total / 60000)} min`),
       h('div', { class: 'row-actions', style: { marginTop: '6px' } },
         h('button', { class: 'btn primary', disabled: !pl.tracks.length, onClick: () => P.playQueue(pl.tracks, 0) }, h('span', { html: I.play }), 'Play'),
         h('button', { class: 'btn', disabled: !pl.tracks.length, onClick: () => { P.state.shuffle = true; emit('state'); P.playQueue(pl.tracks, Math.floor(Math.random() * pl.tracks.length)); } }, h('span', { html: I.shuffle }), 'Shuffle'),
         pl.id === LOCAL_ID ? h('button', { class: 'btn ghost', onClick: pickLocalFiles }, h('span', { html: I.plus }), 'Add files') : null,
-        !liked && pl.id !== LOCAL_ID ? h('button', { class: 'btn ghost', onClick: async () => { const n = await askText('Rename playlist', { value: pl.name }); if (n) { pl.name = n; saveLibrary(); route(); } } }, 'Rename') : null,
-        !liked && pl.id !== LOCAL_ID ? h('button', { class: 'btn ghost', onClick: async () => { if (await askConfirm(`Delete “${pl.name}”?`, { message: 'This removes the playlist from Strand only.', okLabel: 'Delete', danger: true })) { library.playlists = library.playlists.filter(x => x !== pl); saveLibrary(); go('#/library'); } } }, h('span', { html: I.trash }), 'Delete') : null)));
+        readonly ? h('button', { class: 'btn ghost', title: 'Keep a copy in your Strand library, so it shows on your other devices too', onClick: () => { newPlaylist(pl.name, pl.tracks.map(t => ({ ...t, ids: { ...t.ids } })), { source: 'itunes' }); toast('Saved to your library — it’ll show on your other devices'); } }, h('span', { html: I.plus }), 'Save to library') : null,
+        !liked && !readonly && pl.id !== LOCAL_ID ? h('button', { class: 'btn ghost', onClick: async () => { const n = await askText('Rename playlist', { value: pl.name }); if (n) { pl.name = n; saveLibrary(); route(); } } }, 'Rename') : null,
+        !liked && !readonly && pl.id !== LOCAL_ID ? h('button', { class: 'btn ghost', onClick: async () => { if (await askConfirm(`Delete “${pl.name}”?`, { message: 'This removes the playlist from Strand only.', okLabel: 'Delete', danger: true })) { library.playlists = library.playlists.filter(x => x !== pl); saveLibrary(); go('#/library'); } } }, h('span', { html: I.trash }), 'Delete') : null)));
   if (art) hero.style.setProperty('--hero-img', `url("${art}")`);
   v.append(hero, h('div', { style: { marginTop: '20px' } }, pl.tracks.length ? trackRows(pl.tracks) : h('div', { class: 'empty' }, 'No songs yet — use “Add to playlist” from any track menu.')));
 }
@@ -427,19 +429,83 @@ views.playlist = (v, id) => {
   playlistView(v, pl);
 };
 views.liked = v => playlistView(v, { name: 'Liked songs', tracks: library.liked }, { liked: true });
+views.itunes = (v, id) => {
+  const pl = id && itunesPlaylist(id);
+  if (pl) return playlistView(v, pl, { readonly: true });
+  v.append(h('div', { class: 'eyebrow' }, 'iTunes'), h('h1', {}, 'iTunes library'));
+  v.append(itunesBox(true));
+};
+
+// ---------------------------------------------------------------- iTunes sync
+async function runItunesSync(how) {
+  try {
+    let r;
+    if (how === 'file') {
+      const input = h('input', { type: 'file', accept: '.xml,text/xml,application/xml', style: { display: 'none' } });
+      document.body.append(input);
+      const file = await new Promise(res => { input.onchange = () => res(input.files[0]); input.click(); });
+      input.remove();
+      if (!file) return;
+      toast('Reading your iTunes library…');
+      r = await syncItunesXml(await file.text(), file.name);
+    } else {
+      toast('Looking for your iTunes library…');
+      r = await syncFromComputer({ pick: how === 'pick' });
+      if (!r) {
+        if (how === 'pick') return;
+        toast('Couldn’t find it automatically — choose your library file');
+        r = await syncFromComputer({ pick: true });
+        if (!r) return;
+      }
+    }
+    toast(`iTunes synced: ${songs(r.songs)}, ${r.playlists} playlist${r.playlists === 1 ? '' : 's'}`);
+    renderSide();
+    if (/^#\/(library|itunes|settings)/.test(location.hash)) route();
+  } catch (e) { toast('iTunes sync failed: ' + (e?.message || e)); }
+}
+function itunesBox(full = false) {
+  const d = itunesData();
+  const sync = desktopItunes()
+    ? h('button', { class: 'btn small primary', onClick: () => runItunesSync('auto') }, d ? 'Sync now' : 'Sync iTunes library')
+    : h('button', { class: 'btn small primary', onClick: () => runItunesSync('file') }, d ? 'Sync again (choose file)' : 'Choose iTunes library file');
+  const help = desktopItunes()
+    ? 'Strand reads the library file iTunes keeps on this computer and plays your songs straight from their files. Using the Music app? Choose File → Library → Export Library… in it, then “Choose file”.'
+    : 'In iTunes or the Music app on your computer choose File → Library → Export Library…, then pick that file here. Songs play from a streaming service on this device; in the desktop app they play from your files.';
+  const box = h('section', { class: 'svc-card', id: 'itunes' },
+    h('header', {}, h('h3', {}, 'iTunes'), h('span', { class: 'status' }, d ? `${songs(Object.keys(d.tracks).length)} · synced ${new Date(d.syncedAt).toLocaleString()}` : 'Not synced')),
+    h('p', {}, help),
+    h('div', { class: 'inline' }, sync,
+      desktopItunes() ? h('button', { class: 'btn small ghost', onClick: () => runItunesSync('pick') }, 'Choose file') : null,
+      d ? h('button', { class: 'btn small ghost', onClick: async () => { if (await askConfirm('Remove the iTunes library from Strand?', { message: 'Only Strand’s copy of the song list is removed — your iTunes library and files aren’t touched.', okLabel: 'Remove', danger: true })) { await forgetItunes(); renderSide(); route(); } } }, 'Remove') : null));
+  if (full && d) {
+    const g = h('div', { class: 'grid', style: { marginTop: '18px' } });
+    g.append(card({ href: '#/itunes/' + ALL_ID, art: null, title: 'All songs', sub: songs(Object.keys(d.tracks).length) }));
+    d.playlists.forEach(p => g.append(card({ href: '#/itunes/' + p.id, art: null, title: p.name, sub: songs(p.keys.length) })));
+    return h('div', {}, box, g);
+  }
+  return box;
+}
 
 views.library = v => {
   v.append(h('div', { class: 'eyebrow' }, 'Library'), h('h1', {}, 'Your library'),
     h('div', { class: 'row-actions' },
       h('button', { class: 'btn', onClick: async () => { const n = await askText('New playlist', { value: 'My playlist', okLabel: 'Create' }); if (n) { const pl = newPlaylist(n, []); go(`#/playlist/${pl.id}`); } } }, h('span', { html: I.plus }), 'New playlist'),
       h('a', { class: 'btn ghost', href: '#/import' }, h('span', { html: I.import }), 'Import'),
-      h('button', { class: 'btn ghost', onClick: pickLocalFiles }, h('span', { html: I.plus }), 'Add your music files')));
+      h('button', { class: 'btn ghost', onClick: pickLocalFiles }, h('span', { html: I.plus }), 'Add your music files'),
+      !itunesData() ? h('a', { class: 'btn ghost', href: '#/itunes' }, h('span', { html: I.import }), 'Sync iTunes') : null));
   const linked = ORDER.filter(k => ACCOUNTS[k].linked());
-  if (!library.playlists.length && !library.liked.length && !linked.length) {
+  if (!library.playlists.length && !library.liked.length && !linked.length && !itunesData()) {
     v.append(h('div', { class: 'empty' }, h('h3', {}, 'Nothing here yet'), h('div', {}, 'Link Spotify, YouTube Music or SoundCloud in Your music, like songs with the heart, or import a playlist.')));
     return;
   }
   if (library.playlists.length || library.liked.length) v.append(h('h2', {}, 'Made in Strand'), playlistGrid());
+  const it = itunesData();
+  if (it) {
+    const g = h('div', { class: 'grid' });
+    g.append(card({ href: '#/itunes/' + ALL_ID, art: null, title: 'All songs', sub: 'iTunes · ' + songs(Object.keys(it.tracks).length) }));
+    it.playlists.slice(0, 50).forEach(p => g.append(card({ href: '#/itunes/' + p.id, art: null, title: p.name, sub: 'iTunes · ' + songs(p.keys.length) })));
+    v.append(h('h2', {}, h('span', {}, svcDot('itunes'), ' From iTunes'), h('small', {}, h('a', { href: '#/itunes' }, it.playlists.length > 50 ? 'See all' : 'Sync'))), g);
+  }
   // Every playlist already in the listener's connected services
   for (const k of linked) {
     v.append(renderSection(k, { ...ACCOUNTS[k].sections[0], load: () => accountPlaylists(k, true) }, { title: [svcDot(k), `From ${ACCOUNTS[k].label}`], more: `#/me/${k}` }));
@@ -811,9 +877,17 @@ views.settings = v => {
     const run = h('button', { class: 'btn small ghost', onClick: () => connectionCheck(diag, run) }, 'Check connections');
     s.append(h('section', { class: 'svc-card', id: 'web-version' },
       h('header', {}, h('h3', {}, 'Strand'), stat),
-      h('p', {}, 'Strand updates itself: it checks for a new version whenever you open it and loads it straight away (or after your song, if music is playing).'),
-      h('div', { class: 'inline' }, btn, run), diag));
+      h('p', {}, 'Strand updates itself on iPhone, Android and the web: it checks for a new version whenever you open it and loads it straight away (or after your song, if music is playing). “Check for updates” does it right now.'),
+      h('div', { class: 'inline' }, btn, run), diag,
+      androidShell() ? h('div', { class: 'android-app' },
+        h('p', {}, androidUpdate()
+          ? 'A new version of the Android app is out. Download it and open the file to update (your music and settings stay).'
+          : 'Android app: up to date. Strand itself updates automatically; if the app ever needs a new download, you’ll see a button here.'),
+        androidUpdate() ? h('a', { class: 'btn small primary', href: APK_URL }, 'Download Android app') : null) : null));
   }
+
+  // iTunes
+  s.append(itunesBox());
 
   // Playback log (for diagnosing playback problems)
   {
@@ -1323,6 +1397,9 @@ document.addEventListener('visibilitychange', () => {
     on('remote-update', () => { renderSide(); route(); });
   }
   await initLocal();
+  await initItunes();
+  // Desktop app: keep the iTunes library current (re-read it quietly at start).
+  if (desktopItunes() && itunesData()?.from && itunesData().from !== 'file') setTimeout(() => syncFromComputer().then(r => { if (r) renderSide(); }).catch(() => {}), 4000);
   renderNav(); renderTabbar(); renderSide(); drawBar(); drawPanel(); drawPanelBody(); panelLyrics.set(null);
   try {
     const me = await handleSpotifyCallback();

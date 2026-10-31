@@ -31,7 +31,7 @@ function id3mp3() {
   const ctx = await b.newContext({ viewport: { width: 1300, height: 850 } });
   const cfg = fs.readFileSync(path.join(__dirname, '..', 'public', 'config.js'), 'utf8').replace(/supabase(Url|Key): '[^']*'/g, "supabase$1: ''");
   await ctx.route('**/config.js', r => r.fulfill({ contentType: 'text/javascript', body: cfg }));
-  await ctx.route(/itunes|rss\.apple|lrclib/, r => r.fulfill({ contentType: 'application/json', body: '{"results":[]}' }));
+  await ctx.route(/itunes\.apple|rss\.apple|lrclib/, r => r.fulfill({ contentType: 'application/json', body: '{"results":[]}' }));
   await ctx.route(/fonts\.g|deezer/, r => r.abort());
   const p = await ctx.newPage(); const errs = []; p.on('pageerror', e => errs.push(e.message));
   await p.goto('http://127.0.0.1:5176/#/library'); await sleep(1200);

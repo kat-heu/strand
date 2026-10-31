@@ -204,7 +204,7 @@ const TONE = wav(30, 220);
 
   // ---- the phone version updates itself
   let ver = 'aaa111';
-  await ctx.route('**/version.json*', r => J(r, { version: ver }));
+  await ctx.route('**/version.json*', r => J(r, { version: ver, androidShell: 2 }));
   const u = await ctx.newPage();
   await u.goto(BASE); await sleep(1500);
   await u.evaluate(() => { window.__marker = 1; });
@@ -218,6 +218,18 @@ const TONE = wav(30, 220);
   await u.locator('#web-version button', { hasText: 'Check connections' }).tap(); await sleep(11000);
   check('Connection check lists every service with a result', await u.evaluate(() => { const r = [...document.querySelectorAll('.diag-row')]; return r.length === 8 && r.every(x => !x.textContent.includes('checking…')); }), await u.textContent('#web-version'));
   await u.close();
+  // Android app with an older frame: told to download the new one
+  const an = await ctx.newPage();
+  await an.goto(BASE + '?app=android&shell=1#/'); await sleep(1800);
+  check('Android app: old app version is noticed and the address is tidied', !an.url().includes('app=android') && await an.evaluate(() => localStorage.getItem('strand:androidShell')) === '1', an.url());
+  check('Android app: “A new Android app is out” with a Download button', await an.locator('.update-banner', { hasText: 'Android app' }).isVisible() && (await an.locator('.update-banner a').getAttribute('href')).endsWith('/Strand.apk'));
+  await an.evaluate(() => { location.hash = '#/settings'; }); await sleep(700);
+  check('Android app: Settings offers “Download Android app”', await an.locator('#web-version a', { hasText: 'Download Android app' }).isVisible());
+  await an.close();
+  const an2 = await ctx.newPage();
+  await an2.goto(BASE + '?app=android&shell=2#/settings'); await sleep(1800);
+  check('Android app: up-to-date app gets no prompt', !(await an2.locator('.update-banner', { hasText: 'Android app' }).count()) && (await an2.textContent('#web-version')).includes('up to date'));
+  await an2.close();
 
   check('No JavaScript errors', errs.length === 0, errs.join(' | '));
   const failed = results.filter(r => r[0] === 'FAIL').length;

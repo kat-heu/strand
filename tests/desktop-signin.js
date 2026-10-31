@@ -17,7 +17,7 @@ const J = (r, d, status = 200) => r.fulfill({ status, contentType: 'application/
   const ctx = await b.newContext({ userAgent: 'Mozilla/5.0 Strand/0.1.7 Chrome/130 Electron/33.2.0 Safari/537.36', viewport: { width: 1300, height: 850 } });
   const cfg = fs.readFileSync(path.join(__dirname, '..', 'public', 'config.js'), 'utf8').replace(/supabase(Url|Key): '[^']*'/g, "supabase$1: ''");
   await ctx.route('**/config.js', r => r.fulfill({ contentType: 'text/javascript', body: cfg }));
-  await ctx.route(/itunes|lrclib|fonts\.g|rss\.apple/, r => J(r, { results: [], feed: { results: [] } }));
+  await ctx.route(/itunes\.apple|lrclib|fonts\.g|rss\.apple/, r => J(r, { results: [], feed: { results: [] } }));
   let googleAuthUrl = null;
   await ctx.route('https://accounts.google.com/o/oauth2/v2/auth?**', r => {
     const u = new URL(r.request().url()); googleAuthUrl = u;

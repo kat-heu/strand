@@ -100,7 +100,13 @@ jobs:
             echo "::warning::No EVS_ACCOUNT_NAME / EVS_PASSWD secrets: the desktop app keeps castLabs' development Widevine signature."
           fi
       - name: Build installers and upload to the release
-        run: npx electron-builder --publish always
+        shell: bash
+        run: |
+          set -o pipefail
+          if ! npx electron-builder --publish always 2>&1 | tee build.log; then
+            grep -iE "error|failed|cannot|⨯" build.log | grep -v "^\s*at " | tail -8 | while read -r l; do echo "::error title=Build failed::$l"; done
+            exit 1
+          fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'   # unsigned builds; add signing certificates later

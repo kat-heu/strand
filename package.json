@@ -1,8 +1,8 @@
 {
   "name": "strand",
   "productName": "Strand",
-  "version": "0.1.21",
-  "description": "One player for Spotify, Apple Music, YouTube Music and SoundCloud \u2014 synced lyrics, visualizer, playlist import.",
+  "version": "0.1.22",
+  "description": "One player for Spotify, Apple Music, YouTube Music and SoundCloud — synced lyrics, visualizer, playlist import.",
   "main": "electron/main.js",
   "scripts": {
     "start": "node server.js",
@@ -11,8 +11,8 @@
     "test": "node tests/e2e.js && node tests/accounts.js && node tests/desktop-signin.js && node tests/mobile.js && node tests/preview-fallback.js && node tests/local-music.js && node tests/itunes.js"
   },
   "devDependencies": {
-    "electron": "^33.2.0",
-    "electron-builder": "^25.1.8",
+    "electron": "github:castlabs/electron-releases#v44.5.1+wvcus",
+    "electron-builder": "^26.0.12",
     "playwright": "^1.48.0"
   },
   "build": {
@@ -42,7 +42,11 @@
         "repo": "strand",
         "releaseType": "draft"
       }
-    ]
+    ],
+    "electronDownload": {
+      "mirror": "https://github.com/castlabs/electron-releases/releases/download/"
+    },
+    "afterPack": "scripts/vmp-sign.js"
   },
   "license": "MIT",
   "repository": {

@@ -79,11 +79,32 @@ jobs:
         with:
           node-version: 20
       - run: npm install --no-audit --no-fund
+      # Widevine production signing (castLabs EVS) for Windows and macOS — needed for
+      # Spotify inside the desktop app. Optional: without the secrets the build still
+      # works with castLabs' development signature.
+      - uses: actions/setup-python@v5
+        if: matrix.os != 'ubuntu-latest'
+        with:
+          python-version: '3.12'
+      - name: Log in to castLabs EVS
+        if: matrix.os != 'ubuntu-latest'
+        shell: bash
+        env:
+          EVS_ACCOUNT_NAME: ${{ secrets.EVS_ACCOUNT_NAME }}
+          EVS_PASSWD: ${{ secrets.EVS_PASSWD }}
+        run: |
+          python -m pip install --upgrade castlabs-evs
+          if [ -n "$EVS_ACCOUNT_NAME" ] && [ -n "$EVS_PASSWD" ]; then
+            python -m castlabs_evs.account -n reauth -A "$EVS_ACCOUNT_NAME" -P "$EVS_PASSWD" && echo "EVS_LOGGED_IN=1" >> "$GITHUB_ENV"
+          else
+            echo "::warning::No EVS_ACCOUNT_NAME / EVS_PASSWD secrets: the desktop app keeps castLabs' development Widevine signature."
+          fi
       - name: Build installers and upload to the release
         run: npx electron-builder --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'   # unsigned builds; add signing certificates later
+          EVS_PYTHON: python
       - uses: actions/upload-artifact@v4
         with:
           name: strand-${{ matrix.os }}

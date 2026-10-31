@@ -193,10 +193,14 @@ export function createSpotify(ctx) {
   let player = null, deviceId = null, ready = null;
   let st = { pos: 0, dur: 0, paused: true, at: 0 }, currentUri = null, nearEnd = false, endedFor = null;
 
+  // Set if Spotify won't play inside Strand on this computer (e.g. it refuses the
+  // desktop app's copy protection). Then Strand goes straight to the next option.
+  let broken = false, waiter = null;
   function onState(s) {
     if (!s) return;
     st = { pos: s.position, dur: s.duration, paused: s.paused, at: performance.now() };
     const cur = s.track_window?.current_track;
+    if (waiter && cur && !s.paused && (cur.uri === currentUri || cur.linked_from?.uri === currentUri)) { waiter.res(); waiter = null; }
     if (!s.paused && s.duration && s.position > s.duration - 2500) nearEnd = true;
     const finished = s.paused && currentUri && endedFor !== currentUri &&
       ((s.position === 0 && (nearEnd || s.track_window?.previous_tracks?.some(t => t.uri === currentUri))) ||
@@ -222,7 +226,10 @@ export function createSpotify(ctx) {
         setTimeout(() => rej(new Error('Spotify player timed out')), 15000);
       });
       player.addListener('player_state_changed', onState);
-      player.addListener('playback_error', ({ message }) => ctx.onError(new Error(message)));
+      player.addListener('playback_error', ({ message }) => {
+        log('spotify in-app playback error', message);
+        if (waiter) { waiter.rej(new Error(message)); waiter = null; } else ctx.onError(new Error(message));
+      });
       if (!(await player.connect())) throw new Error('Spotify player failed to connect');
       await dev;
       return player;
@@ -234,7 +241,7 @@ export function createSpotify(ctx) {
   return {
     name: 'spotify',
     label: 'Spotify',
-    available: () => spotifyConnected() && !isPhone() && hasWidevine(),
+    available: () => spotifyConnected() && !isPhone() && hasWidevine() && !broken,
     canPlay: () => spotifyConnected(),
     async load(t) {
       const { uri, score } = await resolveSpotifyUri(t);
@@ -242,7 +249,15 @@ export function createSpotify(ctx) {
       try { player.activateElement?.(); } catch {}
       nearEnd = false; endedFor = null; currentUri = uri;
       st = { pos: 0, dur: t.durationMs || 0, paused: false, at: performance.now() };
+      const started = new Promise((res, rej) => { waiter = { res, rej }; setTimeout(() => { if (waiter) { waiter = null; rej(new Error('Spotify didn’t start inside Strand')); } }, 8000); });
       await spApi(`/me/player/play?device_id=${deviceId}`, { method: 'PUT', body: JSON.stringify({ uris: [uri] }) });
+      try { await started; log('spotify playing inside Strand'); }
+      catch (e) {
+        broken = true;                                  // don't try again this session; use the next option
+        log('spotify can’t play inside Strand here', e.message);
+        try { player?.pause(); } catch {}
+        throw new Error('Spotify won’t play inside Strand on this computer (' + e.message + ')');
+      }
       return { score };
     },
     play: () => player?.resume(),

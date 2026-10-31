@@ -114,7 +114,12 @@ const MOCK_GIS = `window.google={accounts:{oauth2:{initTokenClient(c){ window.__
   await p.route('https://api.spotify.com/**', r => {
     const u = new URL(r.request().url()); const P = u.pathname.replace('/v1', ''); spCalls.push(r.request().method() + ' ' + P + u.search);
     if (P === '/me') return J(r, { id: 'kati', display_name: 'Kati', images: [] });
-    if (P === '/me/player/play') return r.fulfill({ status: 204, headers: { 'Access-Control-Allow-Origin': '*' } });
+    if (P === '/me/player/play') {
+      // Like the real Spotify: the in-page player starts the song it was asked to play.
+      const body = r.request().postData(); const uri = body && JSON.parse(body).uris?.[0];
+      if (uri && !global.__spRefuse) setTimeout(() => p.evaluate(u => window.__sp && __sp._play(u, 200000), uri).catch(() => {}), 50);
+      return r.fulfill({ status: 204, headers: { 'Access-Control-Allow-Origin': '*' } });
+    }
     if (P === '/search') return J(r, { tracks: { items: spSearchEmpty ? [] : [spt(0), spt(1)] } });
     if (P === '/me/playlists') return J(r, { items: [{ id: 'own1', name: 'My Mix', images: [], items: { total: 3 }, owner: { id: 'kati', display_name: 'Kati' } }, { id: 'ed1', name: 'Today’s Top Hits', images: [], items: { total: 50 }, owner: { id: 'spotify', display_name: 'Spotify' } }], next: null });
     if (P === '/playlists/own1') return J(r, { name: 'My Mix', images: [], items: { total: 3 } });
@@ -325,6 +330,15 @@ const MOCK_GIS = `window.google={accounts:{oauth2:{initTokenClient(c){ window.__
   await p.evaluate(() => strand.player.playQueue([{ key: 'it:1003', title: 'Quiet Engines', artist: 'Nova Lane', durationMs: 203000, previewUrl: 'https://audio.test/p3.wav', origin: 'catalog', ids: { itunes: '1003' } }], 0)); await sleep(2000); s = await S();
   check('Falls back to preview when not on Spotify', s.prov === 'preview' && s.playing, JSON.stringify(s));
   spSearchEmpty = false;
+  // Spotify refuses to play inside Strand on this computer (e.g. copy protection not accepted)
+  global.__spRefuse = true;
+  const putsBefore = spCalls.filter(c => c.startsWith('PUT /me/player/play?device_id=dev1')).length;
+  await p.evaluate(() => strand.player.playQueue([{ key: 'it:1004', title: 'Glass Hours', artist: 'Nova Lane', durationMs: 200000, previewUrl: 'https://audio.test/p.wav', origin: 'catalog', ids: {} }, { key: 'it:1005', title: 'Glass Hours', artist: 'Nova Lane', durationMs: 200000, previewUrl: 'https://audio.test/p.wav', origin: 'catalog', ids: {} }], 0));
+  await sleep(400); await p.evaluate(() => window.__sp.emit('playback_error', { message: 'Failed to initialize player (license)' })); await sleep(1500); s = await S();
+  check('If Spotify refuses to play inside Strand, the next source takes over right away', s.prov && s.prov !== 'spotify' && s.playing, JSON.stringify(s));
+  await p.evaluate(() => strand.player.next()); await sleep(1500); s = await S();
+  check('…and Strand doesn’t keep retrying Spotify for every song', s.prov && s.prov !== 'spotify' && spCalls.filter(c => c.startsWith('PUT /me/player/play?device_id=dev1')).length === putsBefore + 1, JSON.stringify(s));
+  global.__spRefuse = false;
 
   // ---------- 4. Google / YouTube sign-in
   await go('#/me', 800);

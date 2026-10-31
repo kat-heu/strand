@@ -1,7 +1,7 @@
 // Desktop-app check, run in the real Electron (CI: xvfb-run npx electron tests/electron/smoke.js).
 // Plays a song file through strandfile:// like an iTunes song, and checks that files
 // not in your library are refused.
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, components } = require('electron');
 const fs = require('fs'); const os = require('os'); const path = require('path');
 const itunes = require('../../electron/itunes');
 const { start } = require('../../server');
@@ -36,6 +36,15 @@ app.whenReady().then(async () => {
   results.push(['files not in the library are refused', denied === 403, String(denied)]);
   const notAudio = await run(`fetch('strandfile://song/' + encodeURIComponent(${JSON.stringify(path.join(dir, 'x.txt'))})).then(r => r.status).catch(e => 'err')`);
   results.push(['non-audio files are refused', notAudio === 403, String(notAudio)]);
+  // Widevine (castLabs build): needed for Spotify inside the desktop app
+  let cdm = 'no components API (stock Electron)';
+  if (components) {
+    try { await Promise.race([components.whenReady(), new Promise((_, r) => setTimeout(() => r(new Error('timeout')), 60000))]); cdm = JSON.stringify(components.status()); }
+    catch (e) { cdm = 'not ready: ' + e.message; }
+  }
+  const wv = await run(`navigator.requestMediaKeySystemAccess('com.widevine.alpha', [{ initDataTypes: ['cenc'], audioCapabilities: [{ contentType: 'audio/mp4; codecs="mp4a.40.2"' }] }]).then(() => 'yes', e => 'no: ' + e.message)`);
+  console.log('Widevine module:', cdm);
+  results.push(['Widevine copy protection available (needed for Spotify in the app)', wv === 'yes', wv + ' · ' + cdm]);
   let failed = 0;
   for (const [n, ok, info] of results) { console.log((ok ? 'PASS' : 'FAIL') + ' - ' + n + (ok ? '' : ' → ' + (info || ''))); if (!ok) failed++; }
   console.log(`\n${results.length - failed}/${results.length} passed`);

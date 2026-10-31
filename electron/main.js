@@ -1,7 +1,7 @@
 // Desktop wrapper: serves the same web app from 127.0.0.1 and opens it in a window.
-// For Spotify / Apple Music full playback the window needs Widevine DRM, which the
-// stock Electron build doesn't ship. Use the castLabs "Electron for Content Security"
-// build (see README) — it exposes `components`, which we wait on below.
+// Built on castLabs' "Electron for Content Security", which adds the Widevine module
+// Spotify's in-app player needs (stock Electron doesn't have it). `components`
+// installs/updates it; we wait for it briefly before opening the window.
 const { app, BrowserWindow, shell, components } = require('electron');
 const path = require('path');
 const { start } = require('../server');
@@ -67,7 +67,8 @@ async function createWindow() {
 app.whenReady().then(async () => {
   if (components && typeof components.whenReady === 'function') {
     try {
-      await components.whenReady();
+      // First launch downloads the Widevine module; don't hold the window up for long.
+      await Promise.race([components.whenReady(), new Promise((_, rej) => setTimeout(() => rej(new Error('still downloading')), 15000))]);
       console.log('Widevine ready:', components.status());
     } catch (e) {
       console.warn('Widevine unavailable — Spotify/Apple Music will fall back to other sources:', e.message);

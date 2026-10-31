@@ -88,4 +88,4 @@ const SB = 'https://sb.test';
   for (const r of results) console.log(r[0], '-', r[1], r[0] === 'FAIL' ? '→ ' + r[2] : '');
   console.log(`\n${results.length - failed}/${results.length} passed`);
   await b.close(); process.exit(failed ? 1 : 0);
-})().catch(e => { for (const r of results) console.log(r[0], '-', r[1], r[0] === 'FAIL' ? '→ ' + r[2] : ''); console.error('CRASH', e.message.slice(0, 800)); process.exit(1); });
+})().catch(e => { for (const r of results) console.log(r[0], '-', r[1], r[0] === 'FAIL' ? '→ ' + r[2] : ''); console.error('CRASH [' + require('path').basename(__filename) + ' after ' + results.length + ' checks: ' + (results[results.length - 1] || [])[1] + ']', e.message.slice(0, 800)); process.exit(1); });

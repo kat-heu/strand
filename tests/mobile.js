@@ -238,4 +238,4 @@ const TONE = wav(30, 220);
   await p.evaluate(() => { location.hash = '#/'; }); await sleep(800);
   try { fs.mkdirSync(path.join(__dirname, '..', 'test-results'), { recursive: true }); await p.screenshot({ path: path.join(__dirname, '..', 'test-results', 'mobile-home.png') }); } catch {}
   await b.close(); process.exit(failed ? 1 : 0);
-})().catch(e => { for (const r of results) console.log(r[0], '-', r[1], r[0] === 'FAIL' ? '→ ' + r[2] : ''); console.error('CRASH', e.message.slice(0, 1500)); process.exit(1); });
+})().catch(e => { for (const r of results) console.log(r[0], '-', r[1], r[0] === 'FAIL' ? '→ ' + r[2] : ''); console.error('CRASH [' + require('path').basename(__filename) + ' after ' + results.length + ' checks: ' + (results[results.length - 1] || [])[1] + ']', e.message.slice(0, 1500)); process.exit(1); });

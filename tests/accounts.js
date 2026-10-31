@@ -232,7 +232,7 @@ const track = i => ({ key: 'it:' + i, title: 'Song ' + i, artist: 'Nova Lane', a
   await b.close(); process.exit(failed ? 1 : 0);
 })().catch(async e => {
   for (const r of results) console.log(r[0], '-', r[1], r[0] === 'FAIL' ? '→ ' + r[2] : '');
-  console.error('CRASH', e.message.split('\n')[0]);
+  console.error('CRASH [' + require('path').basename(__filename) + ' after ' + results.length + ' checks: ' + (results[results.length - 1] || [])[1] + ']', e.message.split('\n')[0]);
   try { console.error('Page was at', debugPage.url(), '| heading:', await debugPage.locator('h1').first().textContent({ timeout: 1000 })); await debugPage.screenshot({ path: 'test-results/accounts-crash.png' }); } catch {}
   process.exit(1);
 });

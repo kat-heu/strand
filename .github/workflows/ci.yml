@@ -17,4 +17,11 @@ jobs:
           node-version: 20
       - run: npm install --no-audit --no-fund
       - run: npx playwright install --with-deps chromium
-      - run: npm test
+      - name: npm test
+        run: |
+          set -o pipefail
+          if ! npm test 2>&1 | tee test.log; then
+            # Show which checks failed as annotations (visible without opening the log).
+            grep -E "^(FAIL|CRASH)" test.log | head -10 | while read -r l; do echo "::error title=Test failed::${l//$'\n'/ }"; done
+            exit 1
+          fi

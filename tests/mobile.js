@@ -199,7 +199,7 @@ const TONE = wav(30, 220);
   await p.waitForFunction(() => window.strand && import('/js/providers/google.js').then(m => m.googleLinked()), null, { timeout: 15000, polling: 300 }).catch(() => {});
   await sleep(500);
   check('Phone Google sign-in uses Google’s page (no popup) and returns to Strand', !!gUrl && gUrl.searchParams.get('response_type') === 'token' && gUrl.searchParams.get('redirect_uri') === BASE, gUrl && gUrl.searchParams.get('redirect_uri'));
-  check('…and YouTube is connected afterwards', await p.evaluate(() => import('/js/providers/google.js').then(m => m.googleLinked() && m.googleActive() && m.googleProfile.name === 'Kat on YouTube')));
+  check('…and YouTube is connected afterwards', await p.evaluate(() => import('/js/providers/google.js').then(m => m.googleLinked() && m.googleActive() && m.googleProfile.name === 'Kat on YouTube')), JSON.stringify({ url: p.url(), g: gUrl && gUrl.href.slice(0, 160), info: await p.evaluate(() => ({ pend: localStorage.getItem('strand:google:redirect'), toast: document.getElementById('toast')?.textContent, keys: Object.keys(localStorage).filter(k => /google/.test(k)) })) }));
   check('…and the address no longer holds the sign-in token', !p.url().includes('access_token'), p.url());
 
   // ---- the phone version updates itself

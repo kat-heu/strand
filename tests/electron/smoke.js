@@ -31,7 +31,7 @@ app.whenReady().then(async () => {
     a.onerror = () => res({ ok: false, e: 'error ' + (a.error && a.error.code) }); setTimeout(() => res({ ok: false, e: 'timeout' }), 8000); })`);
   results.push(['library song plays from its file', played.ok && played.t > 0.2, JSON.stringify(played)]);
   const seek = await run(`fetch('strandfile://song/' + encodeURIComponent(${JSON.stringify(song)}), { headers: { Range: 'bytes=100-199' } }).then(r => r.status + ':' + r.headers.get('content-length')).catch(e => 'err ' + e.message)`);
-  results.push(['seeking (range requests) works', /^(206:100|200:\d+)$/.test(seek), seek]);
+  results.push(['seeking (range requests) works', seek === '206:100', seek]);
   const denied = await run(`fetch('strandfile://song/' + encodeURIComponent(${JSON.stringify(secret)})).then(r => r.status).catch(e => 'err')`);
   results.push(['files not in the library are refused', denied === 403, String(denied)]);
   const notAudio = await run(`fetch('strandfile://song/' + encodeURIComponent(${JSON.stringify(path.join(dir, 'x.txt'))})).then(r => r.status).catch(e => 'err')`);

@@ -2,11 +2,12 @@
 // - finds the library file iTunes keeps (or lets you pick an exported one)
 // - serves the songs listed in it to the player through strandfile://song/<path>,
 //   and nothing else: only files named in your library, and only audio files.
-const { app, ipcMain, dialog, protocol, net, BrowserWindow } = require('electron');
+const { ipcMain, dialog, protocol, BrowserWindow } = require('electron');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { pathToFileURL } = require('url');
+const { Readable } = require('stream');
+const TYPES = { '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4', '.mp4': 'audio/mp4', '.aac': 'audio/aac', '.wav': 'audio/wav', '.flac': 'audio/flac', '.ogg': 'audio/ogg', '.opus': 'audio/ogg', '.aif': 'audio/aiff', '.aiff': 'audio/aiff', '.alac': 'audio/mp4' };
 
 const AUDIO = /\.(mp3|m4a|aac|wav|aif|aiff|flac|alac|ogg|opus|mp4)$/i;
 let allowed = new Set();
@@ -32,8 +33,19 @@ function setup() {
     let p = '';
     try { p = decodeURIComponent(new URL(req.url).pathname.replace(/^\//, '')); } catch {}
     if (!p || !AUDIO.test(p) || !allowed.has(norm(p))) return new Response('Not allowed', { status: 403 });
-    if (!fs.existsSync(p)) return new Response('Missing', { status: 404 });
-    return net.fetch(pathToFileURL(p).toString(), { headers: req.headers });   // passes Range through, so seeking works
+    let size;
+    try { size = fs.statSync(p).size; } catch { return new Response('Missing', { status: 404 }); }
+    // Answer byte-range requests ourselves, so jumping around in a song works.
+    const type = TYPES[path.extname(p).toLowerCase()] || 'application/octet-stream';
+    const m = /bytes=(\d*)-(\d*)/.exec(req.headers.get('range') || '');
+    if (m && size) {
+      let start = m[1] === '' ? Math.max(0, size - Number(m[2])) : Number(m[1]);
+      let end = m[1] !== '' && m[2] !== '' ? Math.min(Number(m[2]), size - 1) : size - 1;
+      if (start >= size || start > end) return new Response(null, { status: 416, headers: { 'Content-Range': `bytes */${size}` } });
+      return new Response(Readable.toWeb(fs.createReadStream(p, { start, end })), { status: 206, headers: {
+        'Content-Type': type, 'Content-Length': String(end - start + 1), 'Content-Range': `bytes ${start}-${end}/${size}`, 'Accept-Ranges': 'bytes' } });
+    }
+    return new Response(Readable.toWeb(fs.createReadStream(p)), { status: 200, headers: { 'Content-Type': type, 'Content-Length': String(size), 'Accept-Ranges': 'bytes' } });
   });
   ipcMain.handle('itunes:find', async () => {
     for (const f of candidates()) {

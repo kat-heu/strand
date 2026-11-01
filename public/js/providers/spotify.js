@@ -300,7 +300,9 @@ export const hasWidevine = () => widevine !== false;
 
 export function createSpotifyRemote(ctx) {
   let st = { pos: 0, dur: 0, paused: true, at: 0 }, uri = null, poll = null, nearEnd = false, ended = false, lastPlaying = null;
-  let handed = [];                       // songs given to Spotify after the current one, so it carries on with the screen locked
+  let handed = [];
+  let seq = 0;                           // bumped when a newer song starts: older attempts stop
+  const stale = n => { if (n !== seq) { const e = new Error('cancelled'); e.final = true; throw e; } };                       // songs given to Spotify after the current one, so it carries on with the screen locked
 
   async function devices() { return (await spApi('/me/player/devices'))?.devices || []; }
   async function pickDevice() {
@@ -327,9 +329,9 @@ export function createSpotifyRemote(ctx) {
   }
   // Spotify answers "OK" even when the app doesn't actually start (e.g. iOS has put
   // it to sleep). Check that it's really playing this song before carrying on.
-  async function confirmPlaying(u) {
+  async function confirmPlaying(u, n) {
     for (let i = 0; i < 4; i++) {
-      await sleep(900);
+      await sleep(900); stale(n);
       const s = await spApi('/me/player').catch(e => { log('spotify state error', e.message); return null; });
       log('spotify state', s ? { playing: s.is_playing, device: s.device?.name, at: s.progress_ms, same: s.item?.uri === u, uri: s.item?.uri } : 'nothing playing');
       if (s?.is_playing && (!s.item || s.item.uri === u || s.item.linked_from?.uri === u || (s.progress_ms || 0) > 0)) return s;
@@ -363,7 +365,9 @@ export function createSpotifyRemote(ctx) {
     available: () => spotifyConnected(),
     canPlay: () => spotifyConnected(),
     async load(t) {
+      const n = ++seq;
       const { uri: u, score } = await resolveSpotifyUri(t);
+      stale(n);
       log('spotify song', { uri: u, score });
       // Hand Spotify the songs that follow too (the run of Spotify songs right after this
       // one), so it keeps playing in order even while iOS has Strand asleep.
@@ -377,16 +381,17 @@ export function createSpotifyRemote(ctx) {
         const tryPlay = async () => {
           try { await spApi(`/me/player/play?device_id=${device}`, { method: 'PUT', body: JSON.stringify({ uris: [u, ...next] }) }); }
           catch (e) { log('spotify refused', `${e.status || ''} ${e.message}`); return null; }
-          return confirmPlaying(u);
+          stale(n); return confirmPlaying(u, n);
         };
         s = await tryPlay();
         if (!s) {
           log('spotify did not start — transferring and retrying');
           await spApi('/me/player', { method: 'PUT', body: JSON.stringify({ device_ids: [device], play: false }) }).catch(e => log('transfer refused', `${e.status || ''} ${e.message}`));
-          await sleep(700);
+          await sleep(700); stale(n);
           s = await tryPlay();
         }
       } else log('spotify already playing this song — taking over');
+      stale(n);
       if (!s) {
         // The phone's Spotify app is asleep (iOS suspends it in the background and
         // Spotify then answers "Not found"). Open it on this song; when you come back,
@@ -412,6 +417,7 @@ export function createSpotifyRemote(ctx) {
     position: () => (st.paused ? st.pos : Math.min(st.dur || Infinity, st.pos + (performance.now() - st.at))),
     duration: () => st.dur,
     isPlaying: () => !st.paused,
+    cancel: () => { seq++; },
     stop: () => {
       if (uri) log('spotify app: stop (Strand moved on)');
       clearInterval(poll); poll = null;

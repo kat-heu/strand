@@ -177,6 +177,21 @@ const TONE = wav(30, 220);
   s = await S();
   check('When Spotify moves on by itself, Strand follows without restarting the song', s.idx === 1 && s.title === 'Song 1' && s.prov === 'spotifyRemote' && playCalls() === before, JSON.stringify(s));
 
+  // ---- order: SoundCloud songs never try the Spotify app; old testing setting is ignored
+  const ord = await p.evaluate(() => ({
+    sc: strand.player.sourceOrder({ key: 'sc:1', title: 'x', artist: 'y', origin: 'soundcloud', ids: { soundcloud: 'https://soundcloud.com/a/b' } }),
+  }));
+  check('SoundCloud songs don’t try the Spotify app', !ord.sc.includes('spotifyRemote') && ord.sc[0] === 'soundcloud', JSON.stringify(ord));
+  // a newer song cancels an older attempt that's still waking the Spotify app
+  sp.asleep = true; const opened = [];
+  p.on('framenavigated', f => { if (f.url().startsWith('spotify:')) opened.push(f.url()); });
+  await p.evaluate(() => strand.player.playQueue([{ key: 'sx1', title: 'Song A', artist: 'Nova Lane', durationMs: 200000, origin: 'spotify', ids: { spotify: 'spotify:track:a1' } }], 0)); await sleep(800);
+  await p.evaluate(() => strand.player.playQueue([{ key: 'sc:9', title: 'SC song', artist: 'DJ', durationMs: 1000, origin: 'soundcloud', ids: {} }, { key: 'it:9', title: 'Glass Hours', artist: 'Nova Lane', previewUrl: 'https://audio.test/p9.wav', origin: 'catalog', ids: {} }], 1)); await sleep(9000);
+  const lg = await p.evaluate(() => import('/js/log.js').then(m => m.logLines().slice(-25).join('\n')));
+  const afterSecond = lg.slice(lg.lastIndexOf('Glass Hours'));
+  check('Skipping ahead stops an old Spotify attempt (only the current song opens Spotify)', (afterSecond.match(/opening the Spotify app/g) || []).length <= 1 && !/spotify:track:a1/.test(afterSecond), lg.split('\n').slice(-8).join(' / '));
+  sp.asleep = false;
+
   // ---- long list on a phone
   await p.evaluate(() => import('/js/store.js').then(m => { m.library.playlists.unshift({ id: 'big', name: 'Big', tracks: [...Array(3000)].map((_, i) => ({ key: 'm' + i, title: 'Track ' + i, artist: 'A', artwork: '', durationMs: 1, origin: 'catalog', ids: {} })), created: 1 }); m.saveLibrary(); }));
   await p.evaluate(() => { location.hash = '#/playlist/big'; }); await sleep(800);

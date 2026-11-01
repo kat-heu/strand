@@ -70,13 +70,18 @@ export function sourceOrder(t) {
   if (native) list.push(native);
   // After the in-app players, hand the song to the Spotify app (full length, needs
   // Premium) before falling back to 30-second previews.
-  list.push(...FULL, 'spotifyRemote', 'soundcloud', 'preview');
+  list.push(...FULL, 'soundcloud', 'preview');
   // Phones: Spotify's in-page player can't run there. "Play in Spotify app" puts the
   // remote first; otherwise Spotify songs play inside Strand via YouTube when possible.
-  if (settings.phoneSpotify === 'app') list.unshift('spotifyRemote');
+  // Songs that can be on Spotify (not SoundCloud uploads, YouTube videos or your own files)
+  const fromSpotify = !!t.ids?.spotify || !['soundcloud', 'youtube', 'local', 'cloud'].includes(t.origin);
+  if (settings.phoneSpotify2 === 'app' && fromSpotify) list.unshift('spotifyRemote');
   if (providers.itunes.canPlay(t)) list.unshift('itunes');    // iTunes song on this computer: play the file
   if (providers.cloud.canPlay(t)) list.unshift('cloud');      // your own song from your Strand cloud
   if (isLocalHere(t)) list.unshift('local');                 // your own file on this device always wins
+  // The Spotify app (full song, needs Premium) only as a backup for Spotify songs,
+  // before falling back to a 30-second preview.
+  if (fromSpotify) list.splice(list.indexOf('preview'), 0, 'spotifyRemote');
   list = [...new Set(list)];
   return list.filter(n => providers[n].available() && providers[n].canPlay(t));
 }
@@ -85,6 +90,7 @@ let loadToken = 0;
 
 async function playTrack(t, force = null) {
   const my = ++loadToken;
+  try { providers.spotifyRemote.cancel(); } catch {}         // an older attempt still waking the Spotify app must give up
   if (state.provider) { try { providers[state.provider].stop(); } catch {} }
   Object.assign(state, { track: t, loading: true, error: null, playing: false, position: 0, duration: t.durationMs || 0, provider: null, score: null });
   emit('track', t);

@@ -4,7 +4,6 @@
 import { library, saveLibrary } from './store.js';
 import { cloudMusicOn, uploadSong, deleteSong } from './cloudmusic.js';
 import * as E from './engine.js';
-import { audioProvider } from './audio.js';
 
 const DB = 'strand-local', STORE = 'files', ART = 'art';
 let dbp = null;

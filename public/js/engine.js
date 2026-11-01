@@ -41,6 +41,9 @@ export async function playUrl(name, url, endedCb) {
   await el.play();
 }
 export const isOwner = name => owner === name;
+// Take the element before the song's address is known (so a newer song can tell an
+// older one to give up), without stopping what's playing.
+export function claim(name, endedCb) { clearTimeout(releaseT); owner = name; onEnd = endedCb; }
 export function seekTo(ms) { ownSeek = true; el.currentTime = ms / 1000; lastT = el.currentTime; }
 // Let go of the element. It isn't paused straight away: if the next song also plays
 // here it takes over a still-running element (pausing first can stop iOS from

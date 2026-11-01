@@ -5,7 +5,6 @@
 import { cloudEnabled, currentUser, supabaseBase, supabaseKey, accessToken } from './cloud.js';
 import { log } from './log.js';
 import * as E from './engine.js';
-import { audioProvider } from './audio.js';
 
 const BUCKET = 'music';
 export const cloudMusicOn = () => cloudEnabled() && !!currentUser();

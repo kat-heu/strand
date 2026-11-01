@@ -2,7 +2,8 @@
 // This is also the only source whose raw audio the browser lets us analyse,
 // so the visualizer is truly audio-reactive here (simulated for DRM/iframe players).
 import { match } from '../catalog.js';
-import { audio, claim, owns, release } from '../audio.js';
+import { audio, claim, owns, release, playUrl } from '../audio.js';
+import * as E from '../engine.js';
 import { jsonp, matchScore } from '../util.js';
 
 // Second source of 30-second previews (Deezer's public API), used when Apple's
@@ -81,17 +82,16 @@ export function createPreview(ctx) {
         } catch { corsAudio.pause(); }           // host refused CORS: play without the visualizer
       }
       usingShared = true;
-      audio.src = url;
-      await audio.play();
+      await playUrl(self, url);
       return { score };
     },
     play: () => (usingShared ? owns(self) && audio.play() : corsAudio.play()),
     pause: () => (usingShared ? owns(self) && audio.pause() : corsAudio.pause()),
-    seek: ms => { (usingShared ? audio : corsAudio).currentTime = ms / 1000; },
+    seek: ms => { if (usingShared) { if (owns(self)) E.seekTo(ms); } else corsAudio.currentTime = ms / 1000; },
     setVolume: v => { corsAudio.volume = v; audio.volume = v; },
     position: () => (usingShared ? (owns(self) ? audio.currentTime * 1000 : 0) : corsAudio.currentTime * 1000),
     duration: () => { const a = usingShared ? audio : corsAudio; return (isFinite(a.duration) ? a.duration : 30) * 1000; },
-    isPlaying: () => { const a = usingShared ? audio : corsAudio; return (!usingShared || owns(self)) && !a.paused && !a.ended; },
+    isPlaying: () => (usingShared ? owns(self) && E.playing() : !corsAudio.paused && !corsAudio.ended),
     stop() { corsAudio.pause(); corsAudio.removeAttribute('src'); release(self); },
     analyser: () => (!usingShared && !corsAudio.paused ? analyser : null),
   };

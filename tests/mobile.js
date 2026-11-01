@@ -192,6 +192,8 @@ const TONE = wav(30, 220);
   check('Skipping ahead stops an old Spotify attempt (only the current song opens Spotify)', (afterSecond.match(/opening the Spotify app/g) || []).length <= 1 && !/spotify:track:a1/.test(afterSecond), lg.split('\n').slice(-8).join(' / '));
   sp.asleep = false;
 
+  check('Phones use one shared audio player for everything Strand plays itself', await p.evaluate(() => Promise.all([import('/js/audio.js'), import('/js/engine.js')]).then(([a, e]) => a.audio === e.el && e.el.loop === true)));
+
   // ---- long list on a phone
   await p.evaluate(() => import('/js/store.js').then(m => { m.library.playlists.unshift({ id: 'big', name: 'Big', tracks: [...Array(3000)].map((_, i) => ({ key: 'm' + i, title: 'Track ' + i, artist: 'A', artwork: '', durationMs: 1, origin: 'catalog', ids: {} })), created: 1 }); m.saveLibrary(); }));
   await p.evaluate(() => { location.hash = '#/playlist/big'; }); await sleep(800);

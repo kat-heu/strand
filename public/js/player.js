@@ -30,7 +30,7 @@ const ctx = {
   onAdvanced: steps => {
     const i = state.index + steps;
     if (i >= state.queue.length) return;
-    log('spotify app moved on by itself', state.queue[i].title);
+    log('moved on to the next song by itself', state.queue[i].title);
     const t = state.queue[i];
     Object.assign(state, { index: i, track: t, position: 0, duration: t.durationMs || 0, error: null });
     pushRecent(t); updateMediaSession(t);

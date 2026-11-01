@@ -6,25 +6,25 @@
 // is locked. (A second element would be blocked until you open Strand again.)
 import { log } from './log.js';
 
-export const audio = document.createElement('audio');
+// The element itself lives in engine.js (looping, background-safe hand-over between
+// songs); this file gives sources a simple way to use it.
+import * as E from './engine.js';
+export const audio = E.el;
 audio.id = 'strand-audio';
-audio.preload = 'auto';
-audio.setAttribute('playsinline', '');
-audio.setAttribute('webkit-playsinline', '');
 audio.setAttribute('x-webkit-airplay', 'allow');        // AirPlay picker on iPhone
-(document.body || document.documentElement).append(audio);
+if (!audio.isConnected) (document.body || document.documentElement).append(audio);
 
-let owner = null, wantPlaying = false;
-export const claim = o => { owner = o; };
-export const owns = o => owner === o;
-export const release = o => { if (owner === o) { wantPlaying = false; audio.pause(); } };
+let wantPlaying = false;
+export const claim = (o, endedCb) => E.claim(o, endedCb || (() => o?.onEnded?.()));
+export const owns = o => E.isOwner(o);
+export const release = o => { if (E.isOwner(o)) wantPlaying = false; E.release(o); };
+export const playUrl = (o, url) => E.playUrl(o, url, () => o?.onEnded?.());
 
-audio.addEventListener('ended', () => { wantPlaying = false; owner?.onEnded?.(); });
 audio.addEventListener('playing', () => { wantPlaying = true; });
 // Note pauses Strand didn't ask for (a phone call, another app taking the audio,
 // iOS stopping background audio) so playback problems can be traced in the log.
 audio.addEventListener('pause', () => {
-  if (wantPlaying && !audio.ended) log('audio paused by the system', { hidden: document.hidden, at: Math.round(audio.currentTime) });
+  if (wantPlaying && !audio.muted) log('audio paused by the system', { hidden: document.hidden, at: Math.round(audio.currentTime) });
 });
 
 // Shared player for sources that are just an audio file/URL.
@@ -39,23 +39,22 @@ export function audioProvider(spec, ctx) {
       claim(self);
       const src = await spec.src(t);
       if (!owns(self)) throw Object.assign(new Error('cancelled'), { final: true });
-      audio.src = src;
-      try { await audio.play(); }
+      try { await playUrl(self, src); }
       catch (e) { throw new Error(audio.error?.code === 4 ? 'file missing or not playable' : e.message); }
       return { score: null };
     },
     play: () => { if (owns(self)) { wantPlaying = true; return audio.play(); } },
     pause: () => { if (owns(self)) { wantPlaying = false; audio.pause(); } },
-    seek: ms => { if (owns(self)) audio.currentTime = ms / 1000; },
+    seek: ms => { if (owns(self)) E.seekTo(ms); },
     setVolume: v => { audio.volume = v; },
     position: () => (owns(self) ? audio.currentTime * 1000 : 0),
     duration: () => (owns(self) && isFinite(audio.duration) ? audio.duration * 1000 : 0),
-    isPlaying: () => owns(self) && !audio.paused && !audio.ended,
+    isPlaying: () => owns(self) && E.playing(),
     stop() { release(self); },
   };
   return self;
 }
 
 // App lifecycle in the log (for checking background playback on a real phone).
-document.addEventListener('visibilitychange', () => log('app ' + (document.hidden ? 'in background / screen locked' : 'back in front'), { audio: audio.paused ? 'paused' : 'playing' }));
+document.addEventListener('visibilitychange', () => log('app ' + (document.hidden ? 'in background / screen locked' : 'back in front'), { strandAudio: audio.paused || audio.muted ? 'not playing' : 'playing' }));
 window.addEventListener('pagehide', e => log('page hidden', { persisted: e.persisted }));

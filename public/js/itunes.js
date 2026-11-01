@@ -1,3 +1,5 @@
+import { audioProvider } from './audio.js';
+
 // iTunes / Apple Music app library sync. Reads the library file iTunes keeps
 // ("iTunes Library.xml") or one exported from the Music app (File → Library →
 // Export Library…): every song and playlist comes into Strand.
@@ -137,26 +139,10 @@ export function itunesPlaylist(id) {
 
 // ---- player (desktop app: straight from the file on this computer) --------------
 export function createItunes(ctx) {
-  const audio = new Audio();
-  audio.addEventListener('ended', () => ctx.onEnded());
-  return {
-    name: 'itunes',
-    label: 'iTunes',
+  return audioProvider({
+    name: 'itunes', label: 'iTunes',
     available: () => !!desktopItunes(),
     canPlay: t => !!(desktopItunes() && t.ids?.itunesFile),
-    async load(t) {
-      audio.src = 'strandfile://song/' + encodeURIComponent(t.ids.itunesFile);
-      try { await audio.play(); }
-      catch (e) { throw new Error(audio.error?.code === 4 ? 'file missing or not playable' : e.message); }
-      return { score: null };
-    },
-    play: () => audio.play(),
-    pause: () => audio.pause(),
-    seek: ms => { audio.currentTime = ms / 1000; },
-    setVolume: v => { audio.volume = v; },
-    position: () => audio.currentTime * 1000,
-    duration: () => (isFinite(audio.duration) ? audio.duration * 1000 : 0),
-    isPlaying: () => !audio.paused && !audio.ended,
-    stop() { audio.pause(); },
-  };
+    src: t => 'strandfile://song/' + encodeURIComponent(t.ids.itunesFile),
+  }, ctx);
 }

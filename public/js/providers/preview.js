@@ -2,6 +2,7 @@
 // This is also the only source whose raw audio the browser lets us analyse,
 // so the visualizer is truly audio-reactive here (simulated for DRM/iframe players).
 import { match } from '../catalog.js';
+import { audio, claim, owns, release } from '../audio.js';
 import { jsonp, matchScore } from '../util.js';
 
 // Second source of 30-second previews (Deezer's public API), used when Apple's
@@ -18,17 +19,18 @@ async function deezerPreview(t) {
   return score >= 0.6 ? { url: best.preview, score, artwork: best.album?.cover_xl, durationMs: best.duration * 1000 } : null;
 }
 
+const phone = () => /Android|iPhone|iPod|iPad|Mobile/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent));
+
 export function createPreview(ctx) {
+  // Computers: a separate element wired to the visualizer (needs the preview host to
+  // allow it). Phones: Strand's shared element, never routed through Web Audio —
+  // on iPhones that would stop the sound when the screen locks.
   const corsAudio = new Audio();
   corsAudio.crossOrigin = 'anonymous';
-  const plainAudio = new Audio();
-  let audio = corsAudio;
+  corsAudio.preload = 'auto';
+  let usingShared = true;
   let analyser = null, acx = null, srcNode = null;
-
-  for (const a of [corsAudio, plainAudio]) {
-    a.preload = 'auto';
-    a.addEventListener('ended', () => { if (a === audio) ctx.onEnded(); });
-  }
+  corsAudio.addEventListener('ended', () => { if (!usingShared) ctx.onEnded(); });
 
   function attachAnalyser() {
     if (srcNode) return;
@@ -43,17 +45,14 @@ export function createPreview(ctx) {
     } catch (e) { console.warn('Analyser unavailable', e); }
   }
 
-  async function tryPlay(a, url) {
-    a.src = url;
-    await a.play();
-  }
-
-  return {
+  const self = {
     name: 'preview',
     label: 'Preview',
     available: () => true,
     canPlay: t => !!(t.previewUrl || (t.title && t.artist)),
+    onEnded: () => ctx.onEnded(),
     async load(t) {
+      claim(self);
       let url = t.previewUrl, score = null;
       if (!url) {
         let m = null, why = null;
@@ -70,27 +69,31 @@ export function createPreview(ctx) {
           if (!t.durationMs) t.durationMs = dz.durationMs;
         }
       }
-      try {
-        audio = corsAudio;
-        attachAnalyser();
-        if (acx?.state === 'suspended') await acx.resume();
-        await tryPlay(corsAudio, url);
-      } catch (e) {
-        // Preview host refused CORS — play without the analyser.
-        corsAudio.pause();
-        audio = plainAudio;
-        await tryPlay(plainAudio, url);
+      if (!owns(self)) throw Object.assign(new Error('cancelled'), { final: true });
+      if (!phone()) {
+        try {
+          usingShared = false;
+          attachAnalyser();
+          if (acx?.state === 'suspended') await acx.resume();
+          corsAudio.src = url;
+          await corsAudio.play();
+          return { score };
+        } catch { corsAudio.pause(); }           // host refused CORS: play without the visualizer
       }
+      usingShared = true;
+      audio.src = url;
+      await audio.play();
       return { score };
     },
-    play: () => audio.play(),
-    pause: () => audio.pause(),
-    seek: ms => { audio.currentTime = ms / 1000; },
-    setVolume: v => { corsAudio.volume = v; plainAudio.volume = v; },
-    position: () => audio.currentTime * 1000,
-    duration: () => (isFinite(audio.duration) ? audio.duration : 30) * 1000,
-    isPlaying: () => !audio.paused && !audio.ended,
-    stop() { for (const a of [corsAudio, plainAudio]) { a.pause(); a.removeAttribute('src'); a.load(); } },
-    analyser: () => (audio === corsAudio && !corsAudio.paused ? analyser : null),
+    play: () => (usingShared ? owns(self) && audio.play() : corsAudio.play()),
+    pause: () => (usingShared ? owns(self) && audio.pause() : corsAudio.pause()),
+    seek: ms => { (usingShared ? audio : corsAudio).currentTime = ms / 1000; },
+    setVolume: v => { corsAudio.volume = v; audio.volume = v; },
+    position: () => (usingShared ? (owns(self) ? audio.currentTime * 1000 : 0) : corsAudio.currentTime * 1000),
+    duration: () => { const a = usingShared ? audio : corsAudio; return (isFinite(a.duration) ? a.duration : 30) * 1000; },
+    isPlaying: () => { const a = usingShared ? audio : corsAudio; return (!usingShared || owns(self)) && !a.paused && !a.ended; },
+    stop() { corsAudio.pause(); corsAudio.removeAttribute('src'); release(self); },
+    analyser: () => (!usingShared && !corsAudio.paused ? analyser : null),
   };
+  return self;
 }

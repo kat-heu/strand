@@ -2,6 +2,7 @@
 // fall back automatically (e.g. Spotify → Apple Music → YouTube → 30s preview).
 import { settings, setSetting, emit, pushRecent } from './store.js';
 import { log } from './log.js';
+import * as E from './engine.js';
 import { createSpotify, createSpotifyRemote } from './providers/spotify.js';
 import { createApple } from './providers/apple.js';
 import { createYouTube } from './providers/youtube.js';
@@ -109,6 +110,9 @@ async function playTrack(t, force = null) {
       pushRecent(t);
       updateMediaSession(t);
       emit('track', t);
+      // Get the next song ready (so it can start instantly with the phone locked).
+      const nx = state.queue[state.index + 1];
+      if (nx && !state.shuffle) { try { for (const n of sourceOrder(nx).slice(0, 1)) providers[n].prepare?.(nx); } catch {} }
       return;
     } catch (e) {
       if (my !== loadToken) return;
@@ -169,7 +173,7 @@ export function next(auto = false) {
   } else i = state.index + 1;
   if (i >= state.queue.length) {
     if (state.repeat === 'all') i = 0;
-    else { state.playing = false; emit('state'); return; }
+    else { try { current()?.stop(); } catch {} state.playing = false; emit('state'); return; }
   }
   playAt(i);
 }
@@ -203,21 +207,46 @@ function tick() {
   const playing = !!p.isPlaying();
   state.position = p.position() || 0;
   state.duration = p.duration() || state.track?.durationMs || 0;
-  if (playing !== state.playing) { state.playing = playing; emit('state'); }
+  if (playing !== state.playing) { state.playing = playing; emit('state'); lastPos = -1; }
+  updateMediaPosition();
   emit('time');
 }
 setInterval(tick, 200);
 
+// Lock screen, Control Center, headphones and car controls (Media Session).
 function updateMediaSession(t) {
-  if (!('mediaSession' in navigator)) return;
+  if (!('mediaSession' in navigator) || !t) return;
   try {
-    navigator.mediaSession.metadata = new MediaMetadata({ title: t.title, artist: t.artist, album: t.album || '', artwork: t.artwork ? [{ src: t.artwork, sizes: '600x600' }] : [] });
+    const art = t.artwork && !t.artwork.startsWith('blob:') ? t.artwork : new URL('icons/icon-512.png', location.href).href;
+    navigator.mediaSession.metadata = new MediaMetadata({ title: t.title, artist: t.artist, album: t.album || 'Strand',
+      artwork: [96, 192, 256, 512].map(n => ({ src: art, sizes: `${n}x${n}`, type: /\.png($|\?)/.test(art) ? 'image/png' : 'image/jpeg' })) });
   } catch {}
+}
+let lastPos = 0;
+function updateMediaPosition() {
+  if (!('mediaSession' in navigator)) return;
+  const ms = navigator.mediaSession;
+  try { ms.playbackState = state.track ? (state.playing ? 'playing' : 'paused') : 'none'; } catch {}
+  const d = state.duration / 1000, p = Math.min(state.position / 1000, d);
+  if (!ms.setPositionState || !(d > 0) || !isFinite(d)) return;
+  if (Math.abs(p - lastPos) < 0.9 && state.playing) { lastPos += 0.2; return; }   // the lock screen counts by itself
+  lastPos = p;
+  try { ms.setPositionState({ duration: d, position: Math.max(0, p), playbackRate: 1 }); } catch {}
 }
 if ('mediaSession' in navigator) {
   const ms = navigator.mediaSession;
   const set = (a, f) => { try { ms.setActionHandler(a, f); } catch {} };
-  set('play', toggle); set('pause', toggle);
+  set('play', () => { const p = current(); if (p) p.play(); else toggle(); setTimeout(tick, 150); });
+  set('pause', () => { current()?.pause(); setTimeout(tick, 150); });
+  set('stop', () => { current()?.pause(); setTimeout(tick, 150); });
   set('nexttrack', () => next()); set('previoustrack', prev);
-  set('seekto', d => seek(d.seekTime * 1000));
+  set('seekto', d => { seek(d.seekTime * 1000); lastPos = -1; updateMediaPosition(); });
+  // iPhone shows ±10s buttons instead of previous/next if these exist, so phones skip them.
+  if (!/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+    set('seekbackward', d => { seek(Math.max(0, state.position - (d.seekOffset || 10) * 1000)); lastPos = -1; });
+    set('seekforward', d => { seek(state.position + (d.seekOffset || 10) * 1000); lastPos = -1; });
+  }
+  // iOS ignores handlers set before audio became "Now Playing", so set previous/next
+  // again whenever Strand's own player starts.
+  E.el.addEventListener('playing', () => { set('nexttrack', () => next()); set('previoustrack', prev); updateMediaSession(state.track); });
 }

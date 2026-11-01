@@ -3,6 +3,8 @@
 // songs and play them from a streaming service instead.
 import { library, saveLibrary } from './store.js';
 import { cloudMusicOn, uploadSong, deleteSong } from './cloudmusic.js';
+import * as E from './engine.js';
+import { audioProvider } from './audio.js';
 
 const DB = 'strand-local', STORE = 'files', ART = 'art';
 let dbp = null;
@@ -260,9 +262,7 @@ export async function localUsage() {
 
 // ---- player ------------------------------------------------------------------------
 export function createLocal(ctx) {
-  const audio = new Audio();
   let url = null;
-  audio.addEventListener('ended', () => ctx.onEnded());
   return {
     name: 'local',
     label: 'My music',
@@ -271,19 +271,19 @@ export function createLocal(ctx) {
     async load(t) {
       const file = await localFile(t.ids.local);
       if (!file) throw new Error('file not on this device');
-      if (url) URL.revokeObjectURL(url);
+      const old = url;
       url = URL.createObjectURL(file);
-      audio.src = url;
-      await audio.play();
+      await E.playUrl('local', url, () => ctx.onEnded());
+      if (old) setTimeout(() => URL.revokeObjectURL(old), 5000);
       return { score: null };
     },
-    play: () => audio.play(),
-    pause: () => audio.pause(),
-    seek: ms => { audio.currentTime = ms / 1000; },
-    setVolume: v => { audio.volume = v; },
-    position: () => audio.currentTime * 1000,
-    duration: () => (isFinite(audio.duration) ? audio.duration * 1000 : 0),
-    isPlaying: () => !audio.paused && !audio.ended,
-    stop() { audio.pause(); },
+    play: () => E.isOwner('local') && E.el.play(),
+    pause: () => E.isOwner('local') && E.el.pause(),
+    seek: ms => E.isOwner('local') && E.seekTo(ms),
+    setVolume: v => { E.el.volume = v; },
+    position: () => (E.isOwner('local') ? E.position() : 0),
+    duration: () => (E.isOwner('local') ? E.duration() : 0),
+    isPlaying: () => E.isOwner('local') && E.playing(),
+    stop() { E.release('local'); },
   };
 }

@@ -4,6 +4,8 @@
 // One-time setup for the app owner: run supabase/cloud-music.sql in Supabase.
 import { cloudEnabled, currentUser, supabaseBase, supabaseKey, accessToken } from './cloud.js';
 import { log } from './log.js';
+import * as E from './engine.js';
+import { audioProvider } from './audio.js';
 
 const BUCKET = 'music';
 export const cloudMusicOn = () => cloudEnabled() && !!currentUser();
@@ -74,8 +76,6 @@ export async function showCloudCovers(tracks, hasOwnCover = () => false) {
 }
 
 export function createCloud(ctx) {
-  const audio = new Audio();
-  audio.addEventListener('ended', () => ctx.onEnded());
   return {
     name: 'cloud',
     label: 'My music (cloud)',
@@ -84,17 +84,18 @@ export function createCloud(ctx) {
     async load(t) {
       const [url] = await signPaths([t.ids.cloud]);
       if (!url) throw new Error('couldn’t open it from your cloud');
-      audio.src = url;
-      await audio.play();
+      await E.playUrl('cloud', url, () => ctx.onEnded());
       return { score: null };
     },
-    play: () => audio.play(),
-    pause: () => audio.pause(),
-    seek: ms => { audio.currentTime = ms / 1000; },
-    setVolume: v => { audio.volume = v; },
-    position: () => audio.currentTime * 1000,
-    duration: () => (isFinite(audio.duration) ? audio.duration * 1000 : 0),
-    isPlaying: () => !audio.paused && !audio.ended,
-    stop() { audio.pause(); },
+    // Get the next song's link ready, so it can start instantly even with the phone locked.
+    prepare: t => { if (t?.ids?.cloud && cloudMusicOn()) signPaths([t.ids.cloud]).catch(() => {}); },
+    play: () => E.isOwner('cloud') && E.el.play(),
+    pause: () => E.isOwner('cloud') && E.el.pause(),
+    seek: ms => E.isOwner('cloud') && E.seekTo(ms),
+    setVolume: v => { E.el.volume = v; },
+    position: () => (E.isOwner('cloud') ? E.position() : 0),
+    duration: () => (E.isOwner('cloud') ? E.duration() : 0),
+    isPlaying: () => E.isOwner('cloud') && E.playing(),
+    stop() { E.release('cloud'); },
   };
 }

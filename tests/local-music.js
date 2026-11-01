@@ -46,6 +46,11 @@ function id3mp3() {
   await p.locator('.row', { hasText: 'Glass Hours' }).dblclick(); await sleep(1500);
   let s = await p.evaluate(() => ({ prov: strand.player.state.provider, playing: strand.player.state.playing, pos: strand.player.state.position }));
   check('Plays from the file on this device', s.prov === 'local' && s.playing, JSON.stringify(s));
+  // background-safe: the next song starts on the same, still-playing audio element
+  await p.evaluate(() => { const g = strand.library.playlists.find(x => x.id === 'local').tracks.find(t => t.title === 'Glass Hours'); strand.player.playQueue([g, { ...g, key: g.key + '#2' }], 0); }); await sleep(1200);
+  await p.evaluate(() => import('/js/engine.js').then(E => { E.el.currentTime = E.el.duration - 0.4; })); await sleep(2500);
+  s = await p.evaluate(() => import('/js/engine.js').then(E => ({ idx: strand.player.state.index, prov: strand.player.state.provider, loop: E.el.loop, paused: E.el.paused, muted: E.el.muted })));
+  check('Next song starts on the same audio player without stopping (works with the phone locked)', s.idx === 1 && s.prov === 'local' && s.loop && !s.paused && !s.muted, JSON.stringify(s));
   await p.reload(); await sleep(1500);
   await p.evaluate(() => { location.hash = '#/playlist/local'; }); await sleep(800);
   await p.locator('.row', { hasText: 'Glass Hours' }).dblclick(); await sleep(1500);

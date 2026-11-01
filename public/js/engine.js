@@ -22,15 +22,29 @@ export const sessionInfo = () => navigator.audioSession ? `${navigator.audioSess
 // iPhones only let audio start from a tap. Our songs start after a short wait (reading
 // the file, fetching a link), which can be too late, so on the first tap we "unlock"
 // this element with a moment of silence; after that Strand can start songs itself.
-const SILENCE = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
-let unlocked = false;
+// A real (decodable) 0.1 s silent WAV: 8 kHz, 8-bit, mono.
+const SILENCE = (() => {
+  const n = 800, b = new Uint8Array(44 + n), v = new DataView(b.buffer);
+  const str = (o, s) => [...s].forEach((c, i) => { b[o + i] = c.charCodeAt(0); });
+  str(0, 'RIFF'); v.setUint32(4, 36 + n, true); str(8, 'WAVEfmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, 8000, true); v.setUint32(28, 8000, true); v.setUint16(32, 1, true); v.setUint16(34, 8, true); str(36, 'data'); v.setUint32(40, n, true);
+  b.fill(128, 44);
+  return 'data:audio/wav;base64,' + btoa(String.fromCharCode(...b));
+})();
+// Only unlock while nothing else is playing: starting Strand's audio, even silence,
+// makes iOS pause another app's music (e.g. the Spotify app Strand is controlling).
+let unlockAllowed = () => true;
+export const setUnlockAllowed = f => { unlockAllowed = f; };
+let unlocked = false, unlockTries = 0;
 function unlock() {
-  if (unlocked || owner) return;
+  if (unlocked || owner || unlockTries >= 3 || !unlockAllowed()) return;
+  unlockTries++;
   unlocked = true;
   const was = el.src;
   el.muted = true; el.src = SILENCE;
-  el.play().then(() => { if (!owner) el.pause(); el.muted = false; log('audio unlocked by tap'); }, () => { unlocked = false; el.muted = false; })
-    .finally(() => { if (!owner && was && was !== SILENCE) el.src = was; });
+  el.play().then(() => { if (!owner) el.pause(); el.muted = false; log('audio unlocked by tap'); },
+    e => { unlocked = false; el.muted = false; log('audio unlock failed', e?.message || String(e)); })
+    .finally(() => { if (!owner) { if (was && was !== SILENCE) el.src = was; else { el.removeAttribute('src'); el.load(); } } });
 }
 for (const ev of ['touchend', 'pointerup', 'keydown']) document.addEventListener(ev, unlock, { capture: true, passive: true });
 

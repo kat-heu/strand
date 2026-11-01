@@ -201,6 +201,7 @@ const TONE = wav(30, 220);
   check('Switching away from the Spotify app pauses it and checks it stopped', viaApp.prov === 'spotifyRemote' && sp.calls.some(c => c.startsWith('PUT /me/player/pause')) && /spotify app stopped/.test(lg2) && !sp.isPlaying, viaApp.prov + ' / ' + lg2.split('\n').slice(-5).join(' / '));
   check('Now Playing says whether the source keeps playing when locked', await p.evaluate(() => { const n = document.querySelector('.bg-note'); return !!n && /lock/.test(n.textContent); }));
 
+  check('First tap unlocks Strand’s audio with a sound iPhones can decode', await p.evaluate(() => import('/js/log.js').then(m => m.logLines().some(l => /audio unlocked by tap/.test(l)) && !m.logLines().some(l => /audio unlock failed/.test(l)))));
   check('Phones use one shared audio player for everything Strand plays itself', await p.evaluate(() => Promise.all([import('/js/audio.js'), import('/js/engine.js')]).then(([a, e]) => a.audio === e.el && e.el.loop === true)));
 
   // ---- long list on a phone

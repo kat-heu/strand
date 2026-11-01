@@ -18,6 +18,9 @@ import { createCloud } from './cloudmusic.js';
 // is the current owner, so an old source can never skip, resume or toast after Strand
 // has switched away from it.
 const owns = name => state.provider === name && !state.loading;
+// Don't touch Strand's audio (not even a silent unlock) while another player is
+// making sound — on iPhone that would pause the Spotify app or YouTube.
+E.setUnlockAllowed(() => !state.trying && (!state.provider || BACKGROUND[state.provider] === true));
 const ctx = {
   onEnded: () => { log('song ended'); next(true); },
   onError: e => { console.warn(e); emit('toast', e.message); },

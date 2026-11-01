@@ -12,6 +12,12 @@ import { createLocal, isLocalHere } from './local.js';
 import { createItunes } from './itunes.js';
 import { createCloud } from './cloudmusic.js';
 
+// ---- playback ownership -------------------------------------------------------------
+// Exactly one source owns playback at a time (state.provider). Each source gets its
+// own context; anything it reports (song ended, moved on, error) is ignored unless it
+// is the current owner, so an old source can never skip, resume or toast after Strand
+// has switched away from it.
+const owns = name => state.provider === name && !state.loading;
 const ctx = {
   onEnded: () => { log('song ended'); next(true); },
   onError: e => { console.warn(e); emit('toast', e.message); },
@@ -38,16 +44,37 @@ const ctx = {
   },
 };
 
+function ctxFor(name) {
+  const guard = (what, f) => (...a) => {
+    if (!owns(name)) { log(`ignored ${what} from ${name} (not the current source)`, { current: state.provider || 'none' }); return false; }
+    return f(...a);
+  };
+  return {
+    ...ctx,
+    onEnded: guard('song-ended', ctx.onEnded),
+    onAdvanced: guard('moved-on', ctx.onAdvanced),
+    onAdvancedTo: guard('moved-on', ctx.onAdvancedTo),
+    // Errors while starting are handled by playTrack; later ones only from the owner.
+    onError: e => { if (owns(name)) ctx.onError(e); else log(`error from ${name} (not current)`, e?.message || String(e)); },
+  };
+}
+
+// Whether a source keeps playing when you leave Strand or lock an iPhone:
+//   true      — Strand's own audio (your files, cloud music, previews)
+//   'external'— another app plays it (Spotify app)
+//   false     — stops (YouTube's rules; SoundCloud's and Apple's players are inside a web page)
+export const BACKGROUND = { local: true, cloud: true, preview: true, itunes: true, spotifyRemote: 'external', youtube: false, soundcloud: false, spotify: false, apple: false };
+
 export const providers = {
-  spotify: createSpotify(ctx),
-  spotifyRemote: createSpotifyRemote(ctx),
-  apple: createApple(ctx),
-  youtube: createYouTube(ctx),
-  soundcloud: createSoundCloud(ctx),
-  preview: createPreview(ctx),
-  local: createLocal(ctx),
-  itunes: createItunes(ctx),
-  cloud: createCloud(ctx),
+  spotify: createSpotify(ctxFor('spotify')),
+  spotifyRemote: createSpotifyRemote(ctxFor('spotifyRemote')),
+  apple: createApple(ctxFor('apple')),
+  youtube: createYouTube(ctxFor('youtube')),
+  soundcloud: createSoundCloud(ctxFor('soundcloud')),
+  preview: createPreview(ctxFor('preview')),
+  local: createLocal(ctxFor('local')),
+  itunes: createItunes(ctxFor('itunes')),
+  cloud: createCloud(ctxFor('cloud')),
 };
 
 export const state = {
@@ -92,7 +119,9 @@ let loadToken = 0;
 async function playTrack(t, force = null) {
   const my = ++loadToken;
   try { providers.spotifyRemote.cancel(); } catch {}         // an older attempt still waking the Spotify app must give up
-  if (state.provider) { try { providers[state.provider].stop(); } catch {} }
+  // 1–2. Stop the previous source and release its ownership before anything new starts.
+  const prev = state.provider;
+  if (prev) { log('stopping ' + prev, { for: t.title }); try { providers[prev].stop(); } catch (e) { log('stop failed ' + prev, e.message); } }
   Object.assign(state, { track: t, loading: true, error: null, playing: false, position: 0, duration: t.durationMs || 0, provider: null, score: null });
   emit('track', t);
   const errors = [];
@@ -106,7 +135,7 @@ async function playTrack(t, force = null) {
       if (my !== loadToken) { try { p.stop(); } catch {} return; }
       p.setVolume(settings.volume);
       Object.assign(state, { provider: name, score: score ?? null, loading: false, playing: true, trying: null });
-      log('playing via ' + name);
+      log('playing via ' + name, { from: prev || 'nothing', background: BACKGROUND[name] === true ? 'yes' : BACKGROUND[name] === 'external' ? 'in the Spotify app' : 'no' });
       pushRecent(t);
       updateMediaSession(t);
       emit('track', t);
@@ -250,3 +279,25 @@ if ('mediaSession' in navigator) {
   // again whenever Strand's own player starts.
   E.el.addEventListener('playing', () => { set('nexttrack', () => next()); set('previoustrack', prev); updateMediaSession(state.track); });
 }
+
+// ---- diagnostics: what happens when you leave Strand / lock the phone ----------------
+// Logs the current source and its own state, Strand's audio element separately, and
+// the audio session — so Strand's audio is never confused with Spotify's or YouTube's.
+function snapshot() {
+  const src = state.provider;
+  let srcState = 'nothing playing';
+  if (src) { try { srcState = providers[src].isPlaying() ? 'playing' : 'paused'; } catch { srcState = '?'; } }
+  return { source: src || 'none', sourceState: srcState, background: src ? String(BACKGROUND[src]) : '-', strandAudio: E.describe(), audioSession: E.sessionInfo() };
+}
+let hiddenAt = 0, before = null;
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { hiddenAt = Date.now(); before = snapshot(); log('LEFT STRAND (home / lock / other app)', before); }
+  else {
+    const now = snapshot();
+    log('BACK IN STRAND after ' + Math.round((Date.now() - hiddenAt) / 1000) + 's', now);
+    if (before?.background === 'true' && before.sourceState === 'playing' && now.sourceState !== 'playing') log('⚠ Strand’s own audio stopped while you were away', { before: before.strandAudio, now: now.strandAudio });
+  }
+});
+window.addEventListener('pagehide', e => log('page hidden', { kept: e.persisted }));
+window.addEventListener('pageshow', e => { if (e.persisted) log('page restored from memory'); });
+E.el.addEventListener('pause', () => { if (document.hidden && E.ownerName() !== 'none' && !E.el.muted) log('⚠ Strand audio paused while in background', snapshot()); });

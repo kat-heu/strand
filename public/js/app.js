@@ -1232,6 +1232,16 @@ function drawPanel() {
       }
     }
     if (P.state.error) src.append(h('div', { class: 'dim', style: { fontSize: '12px', width: '100%' } }, P.state.error));
+    // Phones: say plainly whether this source keeps playing when you leave Strand.
+    if (isPhone() && P.state.provider) {
+      const bg = P.BACKGROUND[P.state.provider];
+      const note = bg === true ? 'Keeps playing when you lock the phone or switch apps'
+        : bg === 'external' ? 'Playing in the Spotify app — keeps going when locked'
+        : P.state.provider === 'youtube' ? 'Pauses when you lock the phone or leave Strand (YouTube’s rules)'
+        : P.state.provider === 'soundcloud' ? 'May pause when you lock the phone (SoundCloud’s player)'
+        : 'May pause when you leave Strand';
+      src.append(h('div', { class: 'bg-note' + (bg === true || bg === 'external' ? ' ok' : ''), style: { fontSize: '12px', width: '100%' } }, note));
+    }
     src.append(h('button', { class: 'src-pill', onClick: () => copy(shareUrl(t)) }, h('span', { html: I.link }), 'Share'));
   }
 }

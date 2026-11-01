@@ -55,6 +55,4 @@ export function audioProvider(spec, ctx) {
   return self;
 }
 
-// App lifecycle in the log (for checking background playback on a real phone).
-document.addEventListener('visibilitychange', () => log('app ' + (document.hidden ? 'in background / screen locked' : 'back in front'), { strandAudio: audio.paused || audio.muted ? 'not playing' : 'playing' }));
-window.addEventListener('pagehide', e => log('page hidden', { persisted: e.persisted }));
+// App lifecycle logging lives in player.js (it knows which source is playing).

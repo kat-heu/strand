@@ -17,6 +17,22 @@ el.loop = true;
 el.setAttribute('playsinline', '');
 el.setAttribute('webkit-playsinline', '');
 try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch {}
+export const sessionInfo = () => navigator.audioSession ? `${navigator.audioSession.type}/${navigator.audioSession.state || '?'}` : 'not supported';
+
+// iPhones only let audio start from a tap. Our songs start after a short wait (reading
+// the file, fetching a link), which can be too late, so on the first tap we "unlock"
+// this element with a moment of silence; after that Strand can start songs itself.
+const SILENCE = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
+let unlocked = false;
+function unlock() {
+  if (unlocked || owner) return;
+  unlocked = true;
+  const was = el.src;
+  el.muted = true; el.src = SILENCE;
+  el.play().then(() => { if (!owner) el.pause(); el.muted = false; log('audio unlocked by tap'); }, () => { unlocked = false; el.muted = false; })
+    .finally(() => { if (!owner && was && was !== SILENCE) el.src = was; });
+}
+for (const ev of ['touchend', 'pointerup', 'keydown']) document.addEventListener(ev, unlock, { capture: true, passive: true });
 
 let owner = null, onEnd = null, ownSeek = false, lastT = 0, ended = false;
 el.addEventListener('timeupdate', () => { if (!el.seeking) lastT = el.currentTime; });
@@ -59,3 +75,8 @@ export function release(name) {
 export const position = () => el.currentTime * 1000;
 export const duration = () => (isFinite(el.duration) ? el.duration * 1000 : 0);
 export const playing = () => !el.paused && !ended && !el.muted;
+export const ownerName = () => (owner == null ? 'none' : typeof owner === 'string' ? owner : owner.name || 'source');
+export const describe = () => `${ownerName()}: ${el.paused ? 'paused' : el.muted ? 'silent' : el.readyState < 3 ? 'buffering' : 'playing'}${el.error ? ' error ' + el.error.code : ''}`;
+el.addEventListener('waiting', () => { if (owner) log('strand audio buffering', ownerName()); });
+el.addEventListener('error', () => { if (owner) log('strand audio error', { owner: ownerName(), code: el.error?.code }); });
+el.addEventListener('stalled', () => { if (owner) log('strand audio stalled (network)', ownerName()); });

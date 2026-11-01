@@ -310,10 +310,11 @@ export function createSpotifyRemote(ctx) {
     // Prefer the Spotify app on this kind of device (the phone you're holding),
     // so the sound doesn't come out of another device that happens to be active.
     const here = isPhone() ? /smartphone|tablet/i : /computer/i;
-    log('spotify devices', ds.map(x => `${x.name} (${x.type}${x.is_active ? ', active' : ''}${x.is_restricted ? ', restricted' : ''})`));
+    log('spotify devices', ds.length ? ds.map(x => `${x.name} (${x.type}, id ${String(x.id).slice(0, 6)}…${x.is_active ? ', active' : ''}${x.is_restricted ? ', restricted' : ''})`) : 'none (no Spotify app awake)');
     // Only ever use a Spotify app on this kind of device: music you start on the
     // computer must not come out of your phone in your pocket (and vice versa).
-    const mine = list => list.filter(x => here.test(x.type));
+    // "Restricted" devices don't accept remote commands at all.
+    const mine = list => list.filter(x => here.test(x.type) && !x.is_restricted);
     let d = mine(ds).find(x => x.is_active) || mine(ds)[0];
     if (!d) {
       try { window.location.href = 'spotify:'; } catch {}           // open the Spotify app
@@ -324,7 +325,7 @@ export function createSpotifyRemote(ctx) {
       }
     }
     if (!d) throw new Error(`Open the Spotify app on this ${isPhone() ? 'phone' : 'computer'}, then press play again`);
-    log('spotify device chosen', d.name);
+    log('spotify device chosen', `${d.name} (id ${String(d.id).slice(0, 6)}…${d.is_active ? ', active' : ', not active yet'})`);
     return d.id;
   }
   // Spotify answers "OK" even when the app doesn't actually start (e.g. iOS has put
@@ -377,10 +378,22 @@ export function createSpotifyRemote(ctx) {
       let s = await spApi('/me/player').catch(() => null);
       if (!(s?.is_playing && (s.item?.uri === u || s.item?.linked_from?.uri === u))) {
         s = null;
-        const device = await pickDevice();
-        const tryPlay = async () => {
+        let device = await pickDevice();
+        // One play request, with at most one quick retry for Spotify's temporary
+        // server errors (5xx) and one fresh device lookup if the device ID went stale.
+        const tryPlay = async (attempt = 1) => {
           try { await spApi(`/me/player/play?device_id=${device}`, { method: 'PUT', body: JSON.stringify({ uris: [u, ...next] }) }); }
-          catch (e) { log('spotify refused', `${e.status || ''} ${e.message}`); return null; }
+          catch (e) {
+            log('spotify refused', { attempt, status: e.status || '', error: e.message });
+            stale(n);
+            if (attempt === 1 && e.status >= 500) { await sleep(900); stale(n); return tryPlay(2); }
+            if (attempt === 1 && e.status === 404) {
+              const ds = await devices().catch(() => []); stale(n);
+              const again = ds.find(x => x.id === device) || ds.find(x => (isPhone() ? /smartphone|tablet/i : /computer/i).test(x.type) && !x.is_restricted);
+              if (again && again.id !== device) { log('spotify device ID changed — using the new one'); device = again.id; return tryPlay(2); }
+            }
+            return null;
+          }
           stale(n); return confirmPlaying(u, n);
         };
         s = await tryPlay();
@@ -419,10 +432,23 @@ export function createSpotifyRemote(ctx) {
     isPlaying: () => !st.paused,
     cancel: () => { seq++; },
     stop: () => {
-      if (uri) log('spotify app: stop (Strand moved on)');
       clearInterval(poll); poll = null;
-      if (uri && !st.paused) spApi('/me/player/pause', { method: 'PUT' }).catch(() => {});
-      uri = null; st.paused = true;
+      const mine = [uri, ...handed].filter(Boolean);
+      const had = !!uri;
+      uri = null; handed = []; st.paused = true;
+      if (!had) return;
+      // Strand moved on: make sure the Spotify app doesn't keep playing the list we gave it.
+      log('spotify app: stopping (Strand moved on)');
+      (async () => {
+        for (let attempt = 1; attempt <= 2; attempt++) {
+          try { await spApi('/me/player/pause', { method: 'PUT' }); }
+          catch (e) { log('spotify pause refused', { attempt, status: e.status || '', error: e.message }); if (/no active device|not found/i.test(e.message)) return; }
+          await sleep(1500);
+          const s = await spApi('/me/player').catch(() => null);
+          if (!s?.is_playing || !mine.includes(s.item?.uri)) { log('spotify app stopped'); return; }
+        }
+        log('⚠ spotify app still playing after 2 pause requests');
+      })();
     },
   };
 }

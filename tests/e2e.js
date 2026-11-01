@@ -276,6 +276,10 @@ const MOCK_GIS = `window.google={accounts:{oauth2:{initTokenClient(c){ window.__
   check('SoundCloud: next song of the set plays on its own and Strand follows', s.prov === 'soundcloud' && s.idx === 1 && s.title === 'Upload 1' && await p.evaluate(() => window.__scw.loads === 0), JSON.stringify(s));
   await p.evaluate(() => window.__scw._finish()); await sleep(3200); s = await S();
   check('SoundCloud: if the widget doesn’t carry on, Strand moves to the next song', s.idx === 2 && s.prov === 'soundcloud', JSON.stringify(s));
+  // an old source can't move Strand on after it has been replaced
+  await p.evaluate(() => strand.player.playQueue([{ key: 'it:5001', title: 'Glass Hours', artist: 'Nova Lane', durationMs: 30000, previewUrl: 'https://audio.test/p.wav', origin: 'catalog', ids: {} }, { key: 'it:5002', title: 'Neon Rivers', artist: 'Nova Lane', durationMs: 30000, previewUrl: 'https://audio.test/p.wav', origin: 'catalog', ids: {} }], 0)); await sleep(1200);
+  await p.evaluate(() => window.__scw._finish()); await sleep(3200); s = await S();
+  check('A replaced source (SoundCloud) can’t skip the song that’s playing now', s.idx === 0 && s.title === 'Glass Hours', JSON.stringify(s));
 
   // ---------- 3. Accounts: connect Spotify via real redirect flow (token endpoint mocked)
   await p.evaluate(() => { const st = JSON.parse(localStorage.getItem('strand:settings')) || {}; st.spotifyClientId = 'cid'; st.googleClientId = 'gid'; localStorage.setItem('strand:settings', JSON.stringify(st)); });

@@ -16,7 +16,13 @@ function wav(sec = 3, rate = 8000) {
   const cfg = fs.readFileSync(path.join(__dirname, '..', 'public', 'config.js'), 'utf8').replace(/supabase(Url|Key): '[^']*'/g, "supabase$1: ''").replace(/youtubeKey: '[^']*'/, "youtubeKey: ''");
   await ctx.route(u => u.pathname === '/config.js', r => r.fulfill({ contentType: 'text/javascript', body: cfg }));
   await ctx.route(/itunes\.apple|rss\.apple|lrclib/, r => r.fulfill({ contentType: 'application/json', body: '{"results":[]}' }));
-  await ctx.route(/fonts\.g|deezer|jamendo/, r => r.abort());
+  await ctx.route(/fonts\.g|deezer/, r => r.abort());
+  let jamCid = null;
+  await ctx.route('https://api.jamendo.com/**', r => {
+    const u = new URL(r.request().url()); jamCid = u.searchParams.get('client_id');
+    if (u.pathname.startsWith('/v3.0/tracks/file') || u.pathname.endsWith('.mp3')) return r.fulfill({ contentType: 'audio/wav', headers: { 'Access-Control-Allow-Origin': '*' }, body: wav() });
+    r.fulfill({ contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': '*' }, body: JSON.stringify({ headers: { status: 'success' }, results: [{ id: '777', name: 'Open Road', artist_name: 'Free Band', album_name: 'CC', album_image: '', duration: 3, audio: 'https://api.jamendo.com/v3.0/tracks/file/?id=777' }] }) });
+  });
   const calls = [];
   const T = (id, title, name, extra = {}) => ({ id, title, user: { name, handle: name }, artwork: { '480x480': '' }, duration: 3, genre: 'Electronic', is_streamable: true, ...extra });
   await ctx.route('https://api.audius.co/**', r => {
@@ -39,6 +45,11 @@ function wav(sec = 3, rate = 8000) {
   await p.evaluate(() => { location.hash = '#/search/glass'; }); await sleep(1500);
   await p.locator('.chip', { hasText: 'Free music' }).tap(); await sleep(1500);
   check('Search has a "Free music" tab with Audius results', await p.locator('.row', { hasText: 'Glass Hours (free remix)' }).count() === 1);
+  check('Jamendo is switched on with your developer ID', jamCid === '645ed6b3', String(jamCid));
+  check('Jamendo songs show up in Free music', await p.locator('.row', { hasText: 'Open Road' }).count() === 1);
+  await p.locator('.row', { hasText: 'Open Road' }).tap(); await sleep(2000);
+  s = await p.evaluate(() => ({ prov: strand.player.state.provider, playing: strand.player.state.playing }));
+  check('Jamendo songs play in full inside Strand', s.prov === 'jamendo' && s.playing, JSON.stringify(s));
   check('No JavaScript errors', !errs.length, errs.join(' | '));
   const failed = results.filter(r => r[0] === 'FAIL').length;
   for (const r of results) console.log(r[0], '-', r[1], r[0] === 'FAIL' ? '→ ' + r[2] : '');

@@ -6,7 +6,7 @@ import { initLocal, addLocalFiles, removeLocal, localPlaylist, isLiveBlob, isLoc
 import { cloudMusicOn, showCloudCovers } from './cloudmusic.js';
 import { initItunes, itunesData, itunesPlaylist, syncItunesXml, syncFromComputer, forgetItunes, desktopItunes, ALL_ID } from './itunes.js';
 import { buildMixes, savedMix, smartShuffle } from './mixes.js';
-import { freeSearch, audiusTrending, jamendoOn } from './providers/freemusic.js';
+import { freeSearch, audiusTrending, jamendoOn, jamendoPopular } from './providers/freemusic.js';
 import { askText, askConfirm, showText } from './ui.js';
 import { I, SERVICES } from './icons.js';
 import { settings, setSetting, fromConfig, library, saveLibrary, isLiked, toggleLike, on, emit, clearCaches } from './store.js';
@@ -271,7 +271,7 @@ views.home = async v => {
   {
     const head = h('h2', {}, 'Free music trending', h('small', {}, h('a', { href: '#/search' }, 'Search'))), box = h('div', {});
     v.append(head, box);
-    audiusTrending(18).then(ts => { if (!ts.length) { head.remove(); box.remove(); return; } const g = h('div', { class: 'grid' }); ts.forEach((x, i) => g.append(trackCard(x, ts, i))); box.replaceChildren(g); })
+    Promise.all([audiusTrending(14).catch(() => []), jamendoPopular(8).catch(() => [])]).then(([a, j]) => { const ts = []; for (let i = 0; i < Math.max(a.length, j.length); i++) { if (a[i]) ts.push(a[i]); if (i % 2 === 1 && j[i >> 1]) ts.push(j[i >> 1]); } return ts; }).then(ts => { if (!ts.length) { head.remove(); box.remove(); return; } const g = h('div', { class: 'grid' }); ts.forEach((x, i) => g.append(trackCard(x, ts, i))); box.replaceChildren(g); })
       .catch(() => { head.remove(); box.remove(); });
   }
   v.append(h('h2', {}, 'Most played right now', h('small', {}, settings.country.toUpperCase())));

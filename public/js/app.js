@@ -1,7 +1,7 @@
 import { h, fmt, debounce, b64urlEncode, b64urlDecode, jsonp } from './util.js';
 const songs = n => `${n.toLocaleString()} song${n === 1 ? '' : 's'}`;
 import { startUpdates, checkForUpdate, currentVersion, androidShell, androidUpdate, APK_URL } from './webupdate.js';
-import { logLines, clearLog } from './log.js';
+import { logLines, clearLog, log } from './log.js';
 import { initLocal, addLocalFiles, removeLocal, localPlaylist, isLiveBlob, isLocalHere, LOCAL_ID, uploadMissing, notUploaded } from './local.js';
 import { cloudMusicOn, showCloudCovers } from './cloudmusic.js';
 import { initItunes, itunesData, itunesPlaylist, syncItunesXml, syncFromComputer, forgetItunes, desktopItunes, ALL_ID } from './itunes.js';
@@ -17,7 +17,7 @@ import { startVisualizer } from './visualizer.js';
 import { parseLink, importLink } from './importer.js';
 import {
   spotifyLogin, spotifyLogout, spotifyConnected, handleSpotifyCallback, redirectUri,
-  spotifyPlaylists, spApi, playlistTotal, isPhone, takeSpotifyWake,
+  spotifyPlaylists, spApi, spToTrack, playlistTotal, isPhone, takeSpotifyWake,
 } from './providers/spotify.js';
 import { appleConfigured, appleAuthorized, appleAuthorize, appleUnauthorize, appleInit } from './providers/apple.js';
 import { ytSearch, ytToTrack } from './providers/youtube.js';
@@ -274,12 +274,13 @@ views.home = async v => {
     Promise.all([audiusTrending(14).catch(() => []), jamendoPopular(8).catch(() => [])]).then(([a, j]) => { const ts = []; for (let i = 0; i < Math.max(a.length, j.length); i++) { if (a[i]) ts.push(a[i]); if (i % 2 === 1 && j[i >> 1]) ts.push(j[i >> 1]); } return ts; }).then(ts => { if (!ts.length) { head.remove(); box.remove(); return; } const g = h('div', { class: 'grid' }); ts.forEach((x, i) => g.append(trackCard(x, ts, i))); box.replaceChildren(g); })
       .catch(() => { head.remove(); box.remove(); });
   }
-  v.append(h('h2', {}, 'Most played right now', h('small', {}, settings.country.toUpperCase())));
+  const chartsHead = h('h2', {}, 'Most played right now', h('small', {}, settings.country.toUpperCase()));
+  v.append(chartsHead);
   const box = h('div', {}, loading()); v.append(box);
   try {
     const t = await catalog.top();
     box.replaceChildren(t.length ? (() => { const g = h('div', { class: 'grid' }); t.slice(0, 18).forEach((x, i) => g.append(trackCard(x, t, i))); return g; })() : h('div', { class: 'empty' }, 'Charts unavailable — try Search.'));
-  } catch (e) { box.replaceChildren(errorBox(e)); }
+  } catch (e) { log('charts unavailable', e.message); chartsHead.remove(); box.remove(); }   // catalogue unreachable on this network: just leave it out
 };
 
 function playlistGrid(limit = Infinity) {
@@ -330,7 +331,19 @@ views.search = async (v, q = '') => {
           free.length ? trackRows(free) : h('div', { class: 'empty' }, 'No free songs found for that.'));
       }
       const freeP = searchTab === 'all' ? freeSearch(term, 6).catch(() => []) : null;
-      const r = await catalog.search(term);
+      // Apple's catalogue is the main search. Some networks/phones can't reach it, so
+      // fall back to Spotify (if connected), then YouTube, instead of an error.
+      let r, via = '';
+      try { r = await catalog.search(term); }
+      catch (e) {
+        log('catalogue search failed — using fallback', e.message);
+        let tracks = [];
+        if (spotifyConnected()) { try { tracks = ((await spApi(`/search?type=track&limit=10&q=${encodeURIComponent(term)}`))?.tracks?.items || []).map(spToTrack); via = 'Spotify'; } catch {} }
+        if (!tracks.length && (settings.youtubeKey || googleActive())) { try { tracks = (await ytSearch(term, 10)).map(x => ytToTrack(x)); via = 'YouTube'; } catch {} }
+        if (!tracks.length) { const free = await (freeP || freeSearch(term, 12)).catch(() => []); if (free.length) { tracks = free; via = 'free music'; } }
+        if (!tracks.length) throw e;
+        r = { tracks, albums: [], artists: [] };
+      }
       if (my !== token) return;
       const out = [];
       if (!r.tracks.length) out.push(h('div', { class: 'empty' }, h('h3', {}, 'No results'), h('div', {}, 'Try a different spelling, or the YouTube tab.')));
@@ -349,8 +362,9 @@ views.search = async (v, q = '') => {
         const g = h('div', { class: 'grid' }); r.albums.forEach(a => g.append(card({ href: `#/album/${a.id}`, art: a.artwork, title: a.title, sub: `${a.year} · ${a.artist}` })));
         out.push(h('h2', {}, 'Albums'), g);
       }
+      if (via) out.unshift(h('p', { class: 'muted', style: { fontSize: '12.5px', margin: '0 0 6px' } }, `Results from ${via} — the main music catalogue isn’t reachable on this network right now.`));
       results.replaceChildren(...out);
-      if (freeP) freeP.then(free => { if (my === token && free.length) results.append(h('h2', {}, 'Free full songs', h('small', {}, h('a', { href: 'javascript:void 0', onClick: () => { searchTab = 'free'; drawChips(); run(input.value); } }, 'More'))), trackRows(free.slice(0, 6), { compact: true })); });
+      if (freeP && via !== 'free music') freeP.then(free => { if (my === token && free.length) results.append(h('h2', {}, 'Free full songs', h('small', {}, h('a', { href: 'javascript:void 0', onClick: () => { searchTab = 'free'; drawChips(); run(input.value); } }, 'More'))), trackRows(free.slice(0, 6), { compact: true })); });
     } catch (e) { if (my === token) results.replaceChildren(errorBox(e, () => run(input.value))); }
   }
   input.addEventListener('input', debounce(() => run(input.value), 550));

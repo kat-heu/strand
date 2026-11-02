@@ -45,6 +45,13 @@ function wav(sec = 3, rate = 8000) {
   await p.evaluate(() => { location.hash = '#/search/glass'; }); await sleep(1500);
   await p.locator('.chip', { hasText: 'Free music' }).tap(); await sleep(1500);
   check('Search has a "Free music" tab with Audius results', await p.locator('.row', { hasText: 'Glass Hours (free remix)' }).count() === 1);
+  // Apple's catalogue unreachable (as on some phones/networks): search still gives results
+  await ctx.unroute(/itunes\.apple|rss\.apple|lrclib/);
+  await ctx.route(/itunes\.apple/, r => r.abort());
+  await p.evaluate(() => { location.hash = '#/search'; }); await sleep(600);
+  await p.locator('.chip', { hasText: 'All' }).tap(); await sleep(300);
+  await p.locator('.searchbar input').fill('glass hours'); await sleep(2500);
+  check('Search still works when Apple’s catalogue can’t be reached', !(await p.isVisible('text=Something went wrong')) && await p.locator('.row', { hasText: 'Glass Hours (free remix)' }).count() >= 1 && await p.isVisible('text=isn’t reachable'));
   check('Jamendo is switched on with your developer ID', jamCid === '645ed6b3', String(jamCid));
   check('Jamendo songs show up in Free music', await p.locator('.row', { hasText: 'Open Road' }).count() === 1);
   await p.locator('.row', { hasText: 'Open Road' }).tap(); await sleep(2000);

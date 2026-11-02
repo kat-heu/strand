@@ -35,6 +35,7 @@ const SILENCE = (() => {
 // makes iOS pause another app's music (e.g. the Spotify app Strand is controlling).
 let unlockAllowed = () => true;
 export const setUnlockAllowed = f => { unlockAllowed = f; };
+export const isUnlocked = () => unlocked;
 let unlocked = false, unlockTries = 0;
 function unlock() {
   if (unlocked || owner || unlockTries >= 3 || !unlockAllowed()) return;
@@ -43,7 +44,11 @@ function unlock() {
   const was = el.src;
   el.muted = true; el.src = SILENCE;
   el.play().then(() => { if (!owner) el.pause(); el.muted = false; log('audio unlocked by tap'); },
-    e => { unlocked = false; el.muted = false; log('audio unlock failed', e?.message || String(e)); })
+    e => {
+      // A song started from this same tap and replaced the silence: that unlocks it too.
+      if (owner || e?.name === 'AbortError') { log('audio unlocked (a song started from the tap)'); return; }
+      unlocked = false; el.muted = false; log('audio unlock failed', e?.message || String(e));
+    })
     .finally(() => { if (!owner) { if (was && was !== SILENCE) el.src = was; else { el.removeAttribute('src'); el.load(); } } });
 }
 for (const ev of ['touchend', 'pointerup', 'keydown']) document.addEventListener(ev, unlock, { capture: true, passive: true });

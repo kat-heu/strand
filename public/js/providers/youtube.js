@@ -132,6 +132,8 @@ export function createYouTube(ctx) {
     host,
     available: () => true,
     canPlay: t => !!(t.ids?.youtube || settings.youtubeKey || googleActive()),
+    // Find the YouTube match ahead of time (cached), so the song starts instantly later.
+    prepare: t => { resolve(t).catch(() => {}); },
     async load(t) {
       const my = ++loadToken;
       const { id, score } = await resolve(t);

@@ -988,9 +988,6 @@ views.settings = v => {
   s.append(h('section', { class: 'svc-card' },
     h('header', {}, h('h3', {}, 'Playback')),
     h('div', { class: 'field' }, h('label', {}, 'Preferred source. If a song isn’t available there, Strand tries the next one.'), pref),
-    h('div', { class: 'field' }, h('label', {}, 'On phones, Spotify songs play…'),
-      h('select', { class: 'input', onChange: e => { setSetting('phoneSpotify2', e.target.value); toast('Saved'); } },
-        [['strand', 'In Strand (finds the song on YouTube)'], ['app', 'In the Spotify app (Strand is the remote)']].map(([k, l]) => h('option', { value: k, selected: settings.phoneSpotify2 === k }, l)))),
     h('div', { class: 'field' }, h('label', {}, 'Store region (two-letter country code, e.g. us, gb, ae)'), country),
     field('Public web address for share links (leave blank to use this one)', 'shareBase', { placeholder: 'https://strand.example.com/' }),
     h('div', { class: 'inline' },
@@ -1211,7 +1208,7 @@ function setRange(el, pct) { el.style.setProperty('--v', pct + '%'); }
 function sourcePill(el) {
   const { provider, score, loading } = P.state;
   el.replaceChildren();
-  if (loading) { el.append(h('span', { class: 'dot', style: { background: 'var(--muted)' } }), 'Finding source…'); return; }
+  if (loading) return;                       // no "Finding source…" — the play button shows it's loading
   if (!provider) return;
   el.append(h('span', { class: 'dot', style: { background: SERVICES[provider].color } }), SERVICES[provider].label + (score != null ? ` · ${Math.round(score * 100)}% match` : ''));
 }
@@ -1271,14 +1268,6 @@ function drawPanel() {
   const src = $('np-source'); src.replaceChildren();
   if (t) {
     const pill = h('span', { class: 'src-pill' }); sourcePill(pill); src.append(pill);
-    if (isPhone() && spotifyConnected() && !P.state.loading) {
-      if (P.state.provider === 'spotifyRemote') {
-        const alt = P.sourceOrder(t).find(n => n !== 'spotifyRemote');
-        if (alt) src.append(h('button', { class: 'src-pill', onClick: () => P.playCurrentOn(alt) }, 'Play in Strand instead'));
-      } else if (P.state.provider) {
-        src.append(h('button', { class: 'src-pill spotify-app', onClick: () => P.playCurrentOn('spotifyRemote') }, h('span', { class: 'dot', style: { background: SERVICES.spotify.color } }), 'Play in Spotify app'));
-      }
-    }
     if (P.state.error) src.append(h('div', { class: 'dim', style: { fontSize: '12px', width: '100%' } }, P.state.error));
     // Phones: say plainly whether this source keeps playing when you leave Strand.
     if (isPhone() && P.state.provider) {
@@ -1450,10 +1439,7 @@ document.addEventListener('keydown', e => {
 // ---------------------------------------------------------------- boot
 startUpdates(() => P.state.playing);
 
-// Coming back after Strand opened the sleeping Spotify app: carry on with the song there.
-document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible' && P.state.track && P.state.provider !== 'spotifyRemote' && takeSpotifyWake(P.state.track.key)) P.playCurrentOn('spotifyRemote');
-});
+
 
 
 

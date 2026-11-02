@@ -128,80 +128,24 @@ const TONE = wav(30, 220);
   await p.evaluate(() => { location.hash = '#/album/500'; }); await sleep(1000);
   await p.locator('.row').nth(2).tap(); await sleep(1500);
   s = await S();
-  check('No YouTube set up: Spotify-connected phone plays the full song in the Spotify app (not a 30s preview)', s.prov === 'spotifyRemote' && !sdkLoaded && sp.calls.some(c => c.startsWith('PUT /me/player/play?device_id=phone1')), JSON.stringify(s));
+  check('Spotify-connected phone never hands songs to the Spotify app', s.prov !== 'spotifyRemote' && !sp.calls.some(c => c.startsWith('PUT /me/player/play')), JSON.stringify(s));
   await p.locator('#bar-title').tap(); await sleep(500);
-  check('Player offers "Play in Strand instead"', await p.locator('#np-source button', { hasText: 'Play in Strand instead' }).isVisible());
-  await p.locator('#np-source button', { hasText: 'Play in Strand instead' }).tap(); await sleep(1500);
-  s = await S();
-  check('"Play in Strand instead" plays it in Strand and pauses Spotify', s.prov === 'preview' && sp.isPlaying === false, JSON.stringify(s));
-  check('"Play in Spotify app" button shown in the player', await p.locator('#np-source button', { hasText: 'Play in Spotify app' }).isVisible());
-  await p.locator('#np-source button', { hasText: 'Play in Spotify app' }).tap(); await sleep(2000);
-  s = await S();
-  check('Song moves to the Spotify app', s.prov === 'spotifyRemote' && sp.playing === 'spotify:track:ssatelliteheart', JSON.stringify(s) + ' ' + sp.calls.filter(c => c.includes('player')).join(','));
-  check('Player shows it is playing in the Spotify app', (await p.textContent('#np-source')).includes('Spotify app'));
-  await p.locator('#np-play').tap(); await sleep(500);
-  check('Pause in Strand pauses the Spotify app', sp.isPlaying === false && sp.calls.some(c => c.startsWith('PUT /me/player/pause')));
-  await p.locator('#np-play').tap(); await sleep(500);
-  check('Play in Strand resumes the Spotify app', sp.isPlaying === true);
-  await p.evaluate(() => strand.player.seek(60000)); await sleep(300);
-  check('Seeking moves the Spotify app', sp.pos === 60000);
-  // song ends in the Spotify app -> Strand moves to the next song
-  const idxBefore = (await S()).idx;
-  sp.pos = 198000; await sleep(2600);
-  sp.isPlaying = false; sp.pos = 0; sp.playing = 'spotify:track:other'; await sleep(4500);
-  check('When the song ends in Spotify, Strand plays the next one', (await S()).idx === idxBefore + 1, JSON.stringify(await S()));
-  // setting: always use the Spotify app
+  check('No "Play in Spotify app" button any more', await p.locator('#np-source button', { hasText: 'Spotify app' }).count() === 0);
+  check('No "Finding source…" text while a song loads', !(await p.textContent('#np-source')).includes('Finding source'));
   await p.locator('#np-close').tap(); await sleep(300);
-  await p.evaluate(() => { location.hash = '#/settings'; }); await sleep(800);
-  await p.selectOption('select:has(option[value=app])', 'app'); await sleep(300);
-  await p.evaluate(() => { location.hash = '#/album/500'; }); await sleep(1000);
-  await p.locator('.row').nth(1).tap(); await sleep(2000);
-  check('Setting "In the Spotify app" plays there straight away', (await S()).prov === 'spotifyRemote');
-  check('Sound goes to the phone, not another active device', sp.calls.filter(c => c.startsWith('PUT /me/player/play?device_id=')).every(c => c.includes('phone1')));
-  sp.asleep = true;
-  await p.locator('.row').nth(3).tap(); await sleep(4000);
-  s = await S();
-  check('Sleeping Spotify app ("Not found"): Strand opens it and doesn’t start a preview on top', s.prov === null && !s.playing, JSON.stringify(s));
-  sp.asleep = false;
-  await p.evaluate(() => document.dispatchEvent(new Event('visibilitychange'))); await sleep(3000);
-  s = await S();
-  check('Coming back to Strand: it takes over the song in the Spotify app', s.prov === 'spotifyRemote' && s.title === 'Quiet Engines', JSON.stringify(s));
-
-  // ---- Spotify keeps going through the list with the phone locked
-  sp.bodies = [];
-  await p.evaluate(() => strand.player.playQueue([0, 1, 2].map(i => ({ key: 'sq' + i, title: 'Song ' + i, artist: 'Nova Lane', durationMs: 200000, origin: 'spotify', ids: { spotify: 'spotify:track:q' + i } })), 0)); await sleep(3000);
-  const playCalls = () => sp.calls.filter(c => c.startsWith('PUT /me/player/play?device_id=')).length;
-  check('Spotify app is given the following songs too', JSON.stringify(sp.lastUris) === JSON.stringify(['spotify:track:q0', 'spotify:track:q1', 'spotify:track:q2']), JSON.stringify(sp.lastUris));
-  const before = playCalls();
-  sp.playing = 'spotify:track:q1'; sp.pos = 1000; sp.isPlaying = true; await sleep(2600);
-  s = await S();
-  check('When Spotify moves on by itself, Strand follows without restarting the song', s.idx === 1 && s.title === 'Song 1' && s.prov === 'spotifyRemote' && playCalls() === before, JSON.stringify(s));
-
-  // ---- order: SoundCloud songs never try the Spotify app; old testing setting is ignored
+  await p.evaluate(() => { location.hash = '#/settings'; }); await sleep(700);
+  check('Settings no longer offers playing in the Spotify app', await p.locator('select:has(option[value=app])').count() === 0);
+  // a song's YouTube match is looked up ahead of time for the next songs in the queue
   const ord = await p.evaluate(() => ({
     sc: strand.player.sourceOrder({ key: 'sc:1', title: 'x', artist: 'y', origin: 'soundcloud', ids: { soundcloud: 'https://soundcloud.com/a/b' } }),
+    sp: strand.player.sourceOrder({ key: 'sp:1', title: 'x', artist: 'y', origin: 'spotify', ids: { spotify: 'spotify:track:1' } }),
   }));
-  check('SoundCloud songs don’t try the Spotify app', !ord.sc.includes('spotifyRemote') && ord.sc[0] === 'soundcloud', JSON.stringify(ord));
-  // a newer song cancels an older attempt that's still waking the Spotify app
-  sp.asleep = true; const opened = [];
-  p.on('framenavigated', f => { if (f.url().startsWith('spotify:')) opened.push(f.url()); });
-  await p.evaluate(() => strand.player.playQueue([{ key: 'sx1', title: 'Song A', artist: 'Nova Lane', durationMs: 200000, origin: 'spotify', ids: { spotify: 'spotify:track:a1' } }], 0)); await sleep(800);
-  await p.evaluate(() => strand.player.playQueue([{ key: 'sc:9', title: 'SC song', artist: 'DJ', durationMs: 1000, origin: 'soundcloud', ids: {} }, { key: 'it:9', title: 'Glass Hours', artist: 'Nova Lane', previewUrl: 'https://audio.test/p9.wav', origin: 'catalog', ids: {} }], 1)); await sleep(9000);
-  const lg = await p.evaluate(() => import('/js/log.js').then(m => m.logLines().slice(-25).join('\n')));
-  const afterSecond = lg.slice(lg.lastIndexOf('Glass Hours'));
-  check('Skipping ahead stops an old Spotify attempt (only the current song opens Spotify)', (afterSecond.match(/opening the Spotify app/g) || []).length <= 1 && !/spotify:track:a1/.test(afterSecond), lg.split('\n').slice(-8).join(' / '));
-  sp.asleep = false;
-
-  // ---- ownership: Spotify is really stopped when Strand switches to another source
-  sp.calls.length = 0;
-  await p.evaluate(() => strand.player.playQueue([{ key: 'own1', title: 'Song A', artist: 'Nova Lane', durationMs: 200000, origin: 'spotify', ids: { spotify: 'spotify:track:own1' } }], 0)); await sleep(3500);
-  const viaApp = await S();
-  await p.evaluate(() => strand.player.playQueue([{ key: 'x:77', title: 'Some upload', artist: 'DJ', previewUrl: 'https://audio.test/p77.wav', origin: 'cloud', ids: {} }], 0)); await sleep(4000);
-  const lg2 = await p.evaluate(() => import('/js/log.js').then(m => m.logLines().slice(-15).join('\n')));
-  check('Switching away from the Spotify app pauses it and checks it stopped', viaApp.prov === 'spotifyRemote' && sp.calls.some(c => c.startsWith('PUT /me/player/pause')) && /spotify app stopped/.test(lg2) && !sp.isPlaying, viaApp.prov + ' / ' + lg2.split('\n').slice(-5).join(' / '));
+  check('Spotify app is never in any song’s play order', !ord.sc.includes('spotifyRemote') && !ord.sp.includes('spotifyRemote'), JSON.stringify(ord));
+  await p.evaluate(() => strand.player.playQueue([{ key: 'x:77', title: 'Some upload', artist: 'DJ', previewUrl: 'https://audio.test/p77.wav', origin: 'cloud', ids: {} }], 0)); await sleep(2500);
+  await p.locator('#bar-title').tap(); await sleep(500);
   check('Now Playing says whether the source keeps playing when locked', await p.evaluate(() => { const n = document.querySelector('.bg-note'); return !!n && /lock/.test(n.textContent); }));
 
-  check('First tap unlocks Strand’s audio with a sound iPhones can decode', await p.evaluate(() => import('/js/log.js').then(m => m.logLines().some(l => /audio unlocked by tap/.test(l)) && !m.logLines().some(l => /audio unlock failed/.test(l)))));
+  check('First tap unlocks Strand’s audio with a sound iPhones can decode', await p.evaluate(() => Promise.all([import('/js/engine.js'), import('/js/log.js')]).then(([E, m]) => E.isUnlocked() && !m.logLines().some(l => /audio unlock failed/.test(l)))), await p.evaluate(() => Promise.all([import('/js/engine.js'), import('/js/log.js')]).then(([E, m]) => String(E.isUnlocked()) + ' ' + m.logLines().filter(l => /unlock/.test(l)).join(' / '))));
   check('Phones use one shared audio player for everything Strand plays itself', await p.evaluate(() => Promise.all([import('/js/audio.js'), import('/js/engine.js')]).then(([a, e]) => a.audio === e.el && e.el.loop === true)));
 
   // ---- long list on a phone

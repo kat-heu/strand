@@ -111,7 +111,6 @@ export function sourceOrder(t) {
   // remote first; otherwise Spotify songs play inside Strand via YouTube when possible.
   // Songs that can be on Spotify (not SoundCloud uploads, YouTube videos or your own files)
   const fromSpotify = !!t.ids?.spotify || !['soundcloud', 'youtube', 'local', 'cloud', 'server', 'audius', 'jamendo'].includes(t.origin);
-  if (settings.phoneSpotify2 === 'app' && fromSpotify) list.unshift('spotifyRemote');
   // Your own music server: its songs first; other songs try it too (if you own them,
   // they play from your server instead of a streaming service).
   if (t.ids?.jamendo) list.unshift('jamendo');               // free catalogues: their own full stream
@@ -121,9 +120,7 @@ export function sourceOrder(t) {
   if (providers.itunes.canPlay(t)) list.unshift('itunes');    // iTunes song on this computer: play the file
   if (providers.cloud.canPlay(t)) list.unshift('cloud');      // your own song from your Strand cloud
   if (isLocalHere(t)) list.unshift('local');                 // your own file on this device always wins
-  // The Spotify app (full song, needs Premium) only as a backup for Spotify songs,
-  // before falling back to a 30-second preview.
-  if (fromSpotify) list.splice(list.indexOf('preview'), 0, 'spotifyRemote');
+  // (Strand never hands songs to the Spotify app any more: everything plays inside Strand.)
   list = [...new Set(list)];
   return list.filter(n => providers[n].available() && providers[n].canPlay(t));
 }
@@ -154,8 +151,8 @@ async function playTrack(t, force = null) {
       updateMediaSession(t);
       emit('track', t);
       // Get the next song ready (so it can start instantly with the phone locked).
-      const nx = state.queue[state.index + 1];
-      if (nx && !state.shuffle) { try { for (const n of sourceOrder(nx).slice(0, 1)) providers[n].prepare?.(nx); } catch {} }
+      // …and the one after, so pressing next (or the song ending) starts straight away.
+      prepareAhead();
       return;
     } catch (e) {
       if (my !== loadToken) return;
@@ -169,7 +166,7 @@ async function playTrack(t, force = null) {
   if (my !== loadToken) return;
   Object.assign(state, { loading: false, trying: null, error: errors.join(' · ') || 'No source can play this track' });
   emit('track', t);
-  const hint = !providers.spotifyRemote.available() && !providers.youtube.canPlay(t) ? '. Connect Spotify in Your music to play full songs.' : '';
+  const hint = '';
   emit('toast', 'Couldn’t play “' + t.title + '” — ' + (errors[0] || 'no source available') + hint);
 }
 
@@ -178,6 +175,13 @@ export function playCurrentOn(name) {
   if (!state.track) return;
   const pos = state.position;
   return playTrack(state.track, name).then(() => { if (state.provider === name && pos > 3000) seek(pos); });
+}
+
+function prepareAhead() {
+  if (state.shuffle) return;
+  for (const nx of state.queue.slice(state.index + 1, state.index + 3)) {
+    try { const n = sourceOrder(nx)[0]; if (n) providers[n].prepare?.(nx); } catch {}
+  }
 }
 
 export function playQueue(tracks, i = 0) {

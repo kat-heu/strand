@@ -70,7 +70,7 @@ function hideMenu() { menu.hidden = true; document.body.classList.remove('menu-o
 document.addEventListener('pointerdown', e => { if (!menu.hidden && !menu.contains(e.target)) hideMenu(); });
 
 // ---------------------------------------------------------------- helpers
-const img = (src, cls = '', alt = '') => src && !(src.startsWith('blob:') && !isLiveBlob(src)) ? h('img', { src, class: cls, alt, loading: 'lazy' }) : h('div', { class: 'ph ' + cls, html: I.disc });
+const img = (src, cls = '', alt = '') => src && !(src.startsWith('blob:') && !isLiveBlob(src)) ? h('img', { src, class: cls, alt, width: 300, height: 300, decoding: 'async', loading: 'lazy' }) : h('div', { class: 'ph ' + cls, html: I.disc });
 const svcDot = name => h('span', { class: 'svc', style: { background: SERVICES[name]?.color || 'var(--dim)' }, title: SERVICES[name]?.label });
 
 function shareUrl(t) {
@@ -295,7 +295,7 @@ function playlistGrid(limit = Infinity) {
 
 let searchTab = 'all';
 views.search = async (v, q = '') => {
-  const input = h('input', { class: 'input', type: 'search', placeholder: 'Artists, songs, albums — or paste a Spotify / Apple Music / YouTube / SoundCloud link', value: q, autofocus: true });
+  const input = h('input', { class: 'input', type: 'search', name: 'q', autocomplete: 'off', spellcheck: false, 'aria-label': 'Search', placeholder: 'Artists, songs, albums — or paste a link…', value: q, });
   const chips = h('div', { class: 'chips' });
   const results = h('div', {});
   v.append(h('div', { class: 'searchbar' }, h('div', { class: 'wrap' }, h('span', { html: I.search }), input), chips), results);
@@ -369,7 +369,7 @@ views.search = async (v, q = '') => {
   }
   input.addEventListener('input', debounce(() => run(input.value), 550));
   input.addEventListener('keydown', e => { if (e.key === 'Enter') run(input.value); });
-  setTimeout(() => input.focus(), 30);
+  if (matchMedia('(pointer: fine)').matches) setTimeout(() => input.focus(), 30);   // no keyboard pop-up on phones
   run(q);
 };
 
@@ -793,8 +793,8 @@ function authScreen(mode = 'signin', note = '') {
   document.body.classList.add('auth-mode');
   const err = h('div', { class: 'auth-err', role: 'alert' });
   const info = h('div', { class: 'auth-info' }, note);
-  const name = h('input', { class: 'input', placeholder: 'Your name', autocomplete: 'name' });
-  const email = h('input', { class: 'input', type: 'email', placeholder: 'Email', autocomplete: 'email' });
+  const name = h('input', { class: 'input', placeholder: 'Your name, e.g. Kat…', autocomplete: 'name', name: 'name' });
+  const email = h('input', { class: 'input', type: 'email', placeholder: 'you@example.com', autocomplete: 'email', name: 'email', spellcheck: false, autocapitalize: 'off' });
   const pass = h('input', { class: 'input', type: 'password', placeholder: mode === 'signup' ? 'Password (at least 6 characters)' : 'Password', autocomplete: mode === 'signup' ? 'new-password' : 'current-password' });
   const submit = h('button', { class: 'btn primary auth-submit', type: 'submit' }, mode === 'signup' ? 'Create account' : 'Sign in');
   const form = h('form', { class: 'auth-form', onSubmit: async e => {
@@ -1311,7 +1311,7 @@ function drawPanelBody() {
 }
 function drawQueue() {
   const { queue, index } = P.state;
-  const item = (t, i) => h('div', { class: 'q-item' + (i === index ? ' cur' : ''), onClick: () => P.playAt(i) },
+  const item = (t, i) => h('div', { class: 'q-item' + (i === index ? ' cur' : ''), role: 'button', tabindex: 0, 'aria-label': `Play ${t.title} by ${t.artist}`, onClick: () => P.playAt(i), onKeydown: e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); P.playAt(i); } } },
     img(t.artwork), h('div', { style: { minWidth: 0 } }, h('div', { class: 't' }, t.title), h('div', { class: 's' }, t.origin && t.origin !== 'catalog' ? svcDot(t.origin) : null, t.artist)),
     i !== index ? h('button', { class: 'icon-btn', title: 'Remove', html: I.close, onClick: e => { e.stopPropagation(); P.removeFromQueue(i); } }) : h('span'));
   if (!queue.length) return queueHost.replaceChildren(h('div', { class: 'empty' }, 'Your queue is empty'));

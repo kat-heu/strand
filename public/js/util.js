@@ -1,6 +1,7 @@
 // DOM helper: h('div', {class:'x', onClick: fn}, child, 'text', [more])
 export function h(tag, props = {}, ...kids) {
   const e = document.createElement(tag);
+
   for (const [k, v] of Object.entries(props || {})) {
     if (v == null || v === false) continue;
     if (k === 'class') e.className = v;
@@ -14,6 +15,9 @@ export function h(tag, props = {}, ...kids) {
     if (c == null || c === false) continue;
     e.append(c instanceof Node ? c : String(c));
   }
+  // Icon-only buttons: use the tooltip as the name screen readers announce
+  // (buttons with visible text keep their text as the name).
+  if (tag === 'button' && props?.title && !props['aria-label'] && !e.textContent.trim()) e.setAttribute('aria-label', props.title);
   return e;
 }
 

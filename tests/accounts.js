@@ -113,11 +113,11 @@ const track = i => ({ key: 'it:' + i, title: 'Song ' + i, artist: 'Nova Lane', a
   check('Short password rejected', (await p.textContent('.auth-err')).includes('6 characters'));
 
   // Sign up
-  await p.fill('.auth-form input[placeholder="Your name"]', 'Kat');
+  await p.fill('.auth-form input[name="name"]', 'Kat');
   await p.fill('.auth-form input[type=password]', 'secret123');
   await p.click('.auth-submit'); await p.locator('.me-chip').waitFor({ timeout: 20000 }).catch(() => {}); await sleep(300);
   check('Sign-up enters the app', !(await p.locator('.auth-screen').count()) && await p.locator('#nav').isVisible());
-  check('Sidebar shows account name', (await p.textContent('.me-chip')).includes('Kat'));
+  check('Sidebar shows account name', ((await p.locator('.me-chip').textContent({ timeout: 20000 }).catch(() => '')) || '').includes('Kat'));
   check('Existing library kept after sign-up', await p.evaluate(() => strand.library.playlists[0]?.name === 'Kat mix' && strand.library.liked.length === 1));
   check('Existing Spotify link kept after sign-up', await p.locator('#conn a[title="Spotify linked"]').count() === 1);
   await sleep(1500);
@@ -145,15 +145,16 @@ const track = i => ({ key: 'it:' + i, title: 'Song ' + i, artist: 'Nova Lane', a
   await p.fill('.auth-form input[type=email]', 'kat@example.com');
   await p.fill('.auth-form input[type=password]', 'nope');
   await p.click('.auth-submit'); await sleep(500);
-  check('Wrong password shows a clear error', (await p.textContent('.auth-err')).includes('Wrong email or password'));
+  await p.waitForFunction(() => /Wrong email or password/.test(document.querySelector('.auth-err')?.textContent || ''), null, { timeout: 15000 }).catch(() => {});
+  check('Wrong password shows a clear error', ((await p.locator('.auth-err').textContent({ timeout: 5000 }).catch(() => '')) || '').includes('Wrong email or password'));
 
   // Second person on the same computer
   await p.getByRole('button', { name: 'Create an account' }).click();
-  await p.fill('.auth-form input[placeholder="Your name"]', 'Bob');
+  await p.fill('.auth-form input[name="name"]', 'Bob');
   await p.fill('.auth-form input[type=email]', 'bob@example.com');
   await p.fill('.auth-form input[type=password]', 'bobpass1');
   await p.click('.auth-submit'); await p.locator('.me-chip').waitFor({ timeout: 20000 }).catch(() => {}); await sleep(300);
-  check('Second user signs up on same device', (await p.textContent('.me-chip')).includes('Bob'));
+  check('Second user signs up on same device', ((await p.locator('.me-chip').textContent({ timeout: 20000 }).catch(() => '')) || '').includes('Bob'));
   check('Second user does NOT see first user\'s library', await p.evaluate(() => strand.library.playlists.length === 0 && strand.library.liked.length === 0));
   check('Second user does NOT inherit first user\'s Spotify', await p.locator('#conn a[title="Spotify linked"]').count() === 0);
   check('Duplicate email rejected', await (async () => {
@@ -194,7 +195,7 @@ const track = i => ({ key: 'it:' + i, title: 'Song ' + i, artist: 'Nova Lane', a
   requireConfirm = true;
   const ctxC = await b.newContext(); await setup(ctxC);
   const c = await ctxC.newPage(); await c.goto(BASE); await sleep(500);
-  await c.fill('.auth-form input[placeholder="Your name"]', 'Cara');
+  await c.fill('.auth-form input[name="name"]', 'Cara');
   await c.fill('.auth-form input[type=email]', 'cara@example.com');
   await c.fill('.auth-form input[type=password]', 'carapass');
   await c.click('.auth-submit'); await sleep(800);

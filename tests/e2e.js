@@ -284,7 +284,7 @@ const MOCK_GIS = `window.google={accounts:{oauth2:{initTokenClient(c){ window.__
   // ---------- 3. Accounts: connect Spotify via real redirect flow (token endpoint mocked)
   await p.evaluate(() => { const st = JSON.parse(localStorage.getItem('strand:settings')) || {}; st.spotifyClientId = 'cid'; st.googleClientId = 'gid'; localStorage.setItem('strand:settings', JSON.stringify(st)); });
   await p.goto(BASE + '#/me'); await p.reload(); await sleep(1000);
-  check('Your music shows 4 account tiles', await p.locator('.acct').count() === 4);
+  check('Your music shows 5 account tiles (incl. My music server)', await p.locator('.acct').count() === 5);
   // Spotify connect: intercept the authorize redirect and bounce back with a code
   await p.route('https://accounts.spotify.com/authorize?**', r => {
     const u = new URL(r.request().url());

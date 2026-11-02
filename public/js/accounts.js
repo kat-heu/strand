@@ -17,6 +17,7 @@ import { ytVideosToTracks } from './providers/youtube.js';
 import { youtubeCollection } from './importer.js';
 import { scResolve } from './providers/soundcloud.js';
 import { askText } from './ui.js';
+import { subsonicLinked, subsonicInfo, subsonicConnect, subsonicDisconnect, serverPlaylists, serverPlaylist, serverAlbums, serverAlbum, serverRandom, serverStarred } from './providers/subsonic.js';
 
 const dedupe = list => { const s = new Set(); return list.filter(t => t && !s.has(t.key) && s.add(t.key)); };
 // Liked videos include everything; keep music (category 10) when there is any.
@@ -151,7 +152,35 @@ export const ACCOUNTS = {
     ],
   },
 };
-export const ORDER = ['spotify', 'apple', 'youtube', 'soundcloud'];
+ACCOUNTS.server = {
+  label: 'My music server',
+  blurb: 'Your own music library from Navidrome or any Subsonic-compatible server (Gonic, Airsonic, Ampache, Jellyfin with its Subsonic plugin…).',
+  needs: 'Plays inside Strand — on iPhone it keeps going with the screen locked. Your login stays on this device.',
+  configured: () => true,
+  linked: subsonicLinked,
+  connect: async () => {
+    const url = await askText('Your music server’s address', { placeholder: 'https://music.example.com', message: 'The address you open Navidrome (or your server) at. From the Strand website it must start with https://.', okLabel: 'Next' });
+    if (!url) return;
+    const user = await askText('Username', { placeholder: 'Your server username', okLabel: 'Next' });
+    if (!user) return;
+    const pass = await askText('Password', { type: 'password', message: 'Strand keeps only a scrambled key made from it, on this device.', okLabel: 'Connect' });
+    if (!pass) return;
+    await subsonicConnect(url, user, pass);
+  },
+  disconnect: async () => subsonicDisconnect(),
+  profile: () => subsonicLinked() && { name: subsonicInfo().user, note: subsonicInfo().url.replace(/^https?:\/\//, '') },
+  warning: () => null,
+  sections: [
+    { id: 'playlists', title: 'Playlists', type: 'grid', load: async () => [
+      { title: 'Starred songs', sub: 'My server', liked: true, href: remoteHref('server', 'starred') },
+      { title: 'Random mix', sub: 'Shuffled from your library', href: remoteHref('server', 'random') },
+      ...(await serverPlaylists()).map(p => ({ title: p.name, sub: `${p.count ?? ''} songs`, art: p.art, href: remoteHref('server', 'playlist', p.id) })),
+    ] },
+    { id: 'albums', title: 'Recently added albums', type: 'grid', load: async () =>
+      (await serverAlbums('newest', 24)).map(a => ({ title: a.name, sub: a.artist, art: a.art, href: remoteHref('server', 'album', a.id) })) },
+  ],
+};
+export const ORDER = ['server', 'spotify', 'apple', 'youtube', 'soundcloud'];
 
 // ---------------------------------------------------------------- SoundCloud playlists by link
 // SoundCloud won't list someone's playlists without an Artist Pro developer key, so
@@ -196,6 +225,12 @@ export async function remoteCollection(svc, kind, id, onProgress) {
   const key = [svc, kind, id].join('|');
   if (cache.has(key)) return cache.get(key);
   const p = (async () => {
+    if (svc === 'server') {
+      if (kind === 'starred') return { name: 'Starred songs', tracks: await serverStarred() };
+      if (kind === 'random') return { name: 'Random mix', tracks: await serverRandom(60) };
+      if (kind === 'album') return serverAlbum(id);
+      return serverPlaylist(id);
+    }
     if (svc === 'spotify') {
       if (kind === 'top') return { name: 'Your top tracks', tracks: (await spApi('/me/top/tracks?limit=50&time_range=short_term')).items.map(spToTrack) };
       if (kind === 'recent') return { name: 'Recently played on Spotify', tracks: dedupe((await spApi('/me/player/recently-played?limit=50')).items.map(i => spToTrack(i.track))) };

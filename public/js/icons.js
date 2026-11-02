@@ -45,6 +45,7 @@ export const SERVICES = {
   preview: { label: 'Preview (30s)', color: '#9aa0b4' },
   local: { label: 'My music', color: '#3ddc97' },
   cloud: { label: 'My music (cloud)', color: '#3ddc97' },
+  server: { label: 'My server', color: '#7aa2ff' },
   itunes: { label: 'iTunes', color: '#fb5c74' },
   catalog: { label: 'Catalog', color: '#9aa0b4' },
 };

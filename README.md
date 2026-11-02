@@ -18,6 +18,8 @@ One music player for **Spotify, Apple Music, YouTube Music and SoundCloud**. It 
   Any list plays straight away, and **Save to library** keeps a copy in Strand.
 - **Import** a playlist, album or song from a pasted link on any of the four services
 - **My music (cloud):** Library → Add your music files (MP3, M4A, FLAC, WAV…). Title, artist, album and cover come from the file's tags. Signed-in listeners' songs are saved to a private folder in Supabase Storage and play inside Strand on all their devices (one-time setup: run `supabase/cloud-music.sql`)
+- **My music server:** connect Navidrome or any Subsonic-compatible server (Your music → My music server). Songs play inside Strand (background-safe on iPhone); songs you also own play from your server instead of a streaming service. The login stays on the device (only a salted token is stored)
+- **Mixes:** Daily Mixes, Discover, Favourites and Server Mix, rebuilt daily from what you play, like and group together in playlists (plus related artists from Deezer's free catalogue); every Shuffle is a smart shuffle (no artist twice in a row)
 - **iTunes sync:** the desktop app reads the library iTunes keeps (or a file exported from the Music app: File → Library → Export Library…) and plays songs straight from their files; on phones and the web, pick the exported file and songs play from a streaming service
 - Liked songs, your own playlists, recently played, and library export
 - Share links that open a song in Strand, or in any of the four services

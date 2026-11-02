@@ -5,7 +5,7 @@ import { h } from './util.js';
 function open({ title, message, input, okLabel = 'OK', cancelLabel = 'Cancel', danger = false, readonly = false }) {
   return new Promise(resolve => {
     const field = input !== undefined
-      ? h('input', { class: 'input', value: input.value || '', placeholder: input.placeholder || '', readonly, spellcheck: false })
+      ? h('input', { class: 'input', value: input.value || '', placeholder: input.placeholder || '', readonly, spellcheck: false, type: input.type || 'text', autocapitalize: 'off', autocomplete: input.type === 'password' ? 'current-password' : 'off' })
       : null;
     if (field) field.value = input.value || '';
     const done = val => { overlay.remove(); document.removeEventListener('keydown', onKey, true); resolve(val); };
@@ -26,8 +26,8 @@ function open({ title, message, input, okLabel = 'OK', cancelLabel = 'Cancel', d
 }
 
 // Resolves to the trimmed text, or null if cancelled / left empty.
-export async function askText(title, { value = '', placeholder = '', message = '', okLabel = 'Save' } = {}) {
-  const v = await open({ title, message, input: { value, placeholder }, okLabel });
+export async function askText(title, { value = '', placeholder = '', message = '', okLabel = 'Save', type = 'text' } = {}) {
+  const v = await open({ title, message, input: { value, placeholder, type }, okLabel });
   return v ? v : null;
 }
 export const askConfirm = (title, { message = '', okLabel = 'OK', danger = false } = {}) =>

@@ -5,6 +5,7 @@ import { logLines, clearLog } from './log.js';
 import { initLocal, addLocalFiles, removeLocal, localPlaylist, isLiveBlob, isLocalHere, LOCAL_ID, uploadMissing, notUploaded } from './local.js';
 import { cloudMusicOn, showCloudCovers } from './cloudmusic.js';
 import { initItunes, itunesData, itunesPlaylist, syncItunesXml, syncFromComputer, forgetItunes, desktopItunes, ALL_ID } from './itunes.js';
+import { buildMixes, savedMix, smartShuffle } from './mixes.js';
 import { askText, askConfirm, showText } from './ui.js';
 import { I, SERVICES } from './icons.js';
 import { settings, setSetting, fromConfig, library, saveLibrary, isLiked, toggleLike, on, emit, clearCaches } from './store.js';
@@ -248,6 +249,15 @@ views.home = async v => {
     ORDER.filter(k => ACCOUNTS[k].linked()).slice(0, 2).forEach(k =>
       v.append(renderSection(k, ACCOUNTS[k].sections[0], { limit: 6, title: [svcDot(k), `From ${ACCOUNTS[k].label}`], more: `#/me/${k}` })));
   }
+  // Made for you (filled in when ready, so Home never waits for it)
+  if (library.recent.length + library.liked.length >= 3) {
+    const box = h('div', {}), head = h('h2', {}, 'Made for you', h('small', {}, h('a', { href: '#/mixes' }, 'All mixes')));
+    v.append(head, box);
+    buildMixes().then(ms => {
+      if (!ms.length) { head.remove(); box.remove(); return; }
+      const g = h('div', { class: 'grid' }); ms.forEach(m => g.append(mixCard(m))); box.replaceChildren(g);
+    }).catch(() => { head.remove(); box.remove(); });
+  }
   if (library.recent.length) {
     v.append(h('h2', {}, 'Recently played'));
     const g = h('div', { class: 'grid' }); library.recent.slice(0, 12).forEach((t, i, a) => g.append(trackCard(t, a, i))); v.append(g);
@@ -407,23 +417,23 @@ views.album = async (v, id) => {
   if (a.copyright) v.append(h('p', { class: 'dim', style: { fontSize: '12px', marginTop: '24px' } }, a.copyright));
 };
 
-function playlistView(v, pl, { liked = false, readonly = false } = {}) {
+function playlistView(v, pl, { liked = false, readonly = false, mix = '' } = {}) {
   const total = pl.tracks.reduce((s, t) => s + (t.durationMs || 0), 0);
   const art = pl.artwork || pl.tracks[0]?.artwork;
   const hero = h('div', { class: 'hero' },
     liked ? h('div', { class: 'hero-art ph', style: { background: 'linear-gradient(135deg,var(--accent),var(--accent-2))', color: '#140a07' }, html: I.heartFill.replace(/18/g, '72') }) : img(art, 'hero-art'),
-    h('div', { class: 'hero-meta' }, h('div', { class: 'eyebrow' }, liked ? 'Collection' : readonly ? 'iTunes library' : (pl.source ? 'Imported from ' + SERVICES[pl.source].label : 'Playlist')), h('h1', {}, pl.name),
+    h('div', { class: 'hero-meta' }, h('div', { class: 'eyebrow' }, liked ? 'Collection' : mix ? 'Mix · ' + mix : readonly ? 'iTunes library' : (pl.source ? 'Imported from ' + SERVICES[pl.source].label : 'Playlist')), h('h1', {}, pl.name),
       h('div', { class: 'sub' }, `${songs(pl.tracks.length)} · ${Math.round(total / 60000)} min`),
       h('div', { class: 'row-actions', style: { marginTop: '6px' } },
         h('button', { class: 'btn primary', disabled: !pl.tracks.length, onClick: () => P.playQueue(pl.tracks, 0) }, h('span', { html: I.play }), 'Play'),
-        h('button', { class: 'btn', disabled: !pl.tracks.length, onClick: () => { P.state.shuffle = true; emit('state'); P.playQueue(pl.tracks, Math.floor(Math.random() * pl.tracks.length)); } }, h('span', { html: I.shuffle }), 'Shuffle'),
+        h('button', { class: 'btn', disabled: !pl.tracks.length, title: 'Shuffle without the same artist twice in a row', onClick: () => { P.state.shuffle = false; emit('state'); P.playQueue(smartShuffle(pl.tracks), 0); toast('Smart shuffle'); } }, h('span', { html: I.shuffle }), 'Shuffle'),
         pl.id === LOCAL_ID ? h('button', { class: 'btn ghost', onClick: pickLocalFiles }, h('span', { html: I.plus }), 'Add files') : null,
         pl.id === LOCAL_ID && cloudMusicOn() && notUploaded() ? h('button', { class: 'btn ghost', onClick: async e => {
           const b = e.currentTarget; b.disabled = true;
           try { const r = await uploadMissing((n, total) => { b.textContent = `Uploading ${n + 1} of ${total}…`; }); toast(`${songs(r.uploaded)} saved to your cloud`); route(); }
           catch (err) { toast('Upload stopped: ' + err.message); b.disabled = false; b.textContent = 'Save to cloud'; }
         } }, h('span', { html: I.import }), `Save ${notUploaded()} to cloud`) : null,
-        readonly ? h('button', { class: 'btn ghost', title: 'Keep a copy in your Strand library, so it shows on your other devices too', onClick: () => { newPlaylist(pl.name, pl.tracks.map(t => ({ ...t, ids: { ...t.ids } })), { source: 'itunes' }); toast('Saved to your library — it’ll show on your other devices'); } }, h('span', { html: I.plus }), 'Save to library') : null,
+        readonly ? h('button', { class: 'btn ghost', title: 'Keep a copy in your Strand library, so it shows on your other devices too', onClick: () => { newPlaylist(pl.name, pl.tracks.map(t => ({ ...t, ids: { ...t.ids } })), mix ? {} : { source: 'itunes' }); toast('Saved to your library — it’ll show on your other devices'); } }, h('span', { html: I.plus }), 'Save to library') : null,
         !liked && !readonly && pl.id !== LOCAL_ID ? h('button', { class: 'btn ghost', onClick: async () => { const n = await askText('Rename playlist', { value: pl.name }); if (n) { pl.name = n; saveLibrary(); route(); } } }, 'Rename') : null,
         !liked && !readonly && pl.id !== LOCAL_ID ? h('button', { class: 'btn ghost', onClick: async () => { if (await askConfirm(`Delete “${pl.name}”?`, { message: 'This removes the playlist from Strand only.', okLabel: 'Delete', danger: true })) { library.playlists = library.playlists.filter(x => x !== pl); saveLibrary(); go('#/library'); } } }, h('span', { html: I.trash }), 'Delete') : null)));
   if (art) hero.style.setProperty('--hero-img', `url("${art}")`);
@@ -435,6 +445,27 @@ views.playlist = (v, id) => {
   playlistView(v, pl);
 };
 views.liked = v => playlistView(v, { name: 'Liked songs', tracks: library.liked }, { liked: true });
+
+// ---------------------------------------------------------------- Mixes (made for you)
+function mixCard(m) {
+  return card({ href: '#/mix/' + m.id, art: m.artwork, title: m.name, sub: m.sub, onPlay: () => P.playQueue(m.tracks, 0) });
+}
+views.mixes = async v => {
+  v.append(h('div', { class: 'eyebrow' }, 'Made for you'), h('h1', {}, 'Mixes'),
+    h('p', { class: 'muted', style: { maxWidth: '640px' } }, 'Fresh every day from what you play, like and keep in your playlists — songs that sit together in your playlists end up together here, with a few new artists mixed in.'));
+  const box = h('div', {}, loading()); v.append(box);
+  const draw = mixes => {
+    if (!mixes.length) return box.replaceChildren(h('div', { class: 'empty' }, h('h3', {}, 'Play and like a few songs first'), h('div', {}, 'Mixes are made from your listening, likes and playlists.')));
+    const g = h('div', { class: 'grid' }); mixes.forEach(m => g.append(mixCard(m)));
+    box.replaceChildren(g, h('div', { class: 'inline', style: { marginTop: '18px' } }, h('button', { class: 'btn small ghost', onClick: async e => { e.currentTarget.disabled = true; box.replaceChildren(loading()); draw(await buildMixes({ force: true })); } }, 'Make new mixes')));
+  };
+  try { draw(await buildMixes()); } catch (e) { box.replaceChildren(errorBox(e)); }
+};
+views.mix = (v, id) => {
+  const m = savedMix(id);
+  if (!m) return go('#/mixes');
+  playlistView(v, { name: m.name, artwork: m.artwork, tracks: m.tracks }, { readonly: true, mix: m.sub });
+};
 views.itunes = (v, id) => {
   const pl = id && itunesPlaylist(id);
   if (pl) return playlistView(v, pl, { readonly: true });
@@ -1080,7 +1111,7 @@ function renderTabbar() {
   $('tabbar').replaceChildren(...items.map(([k, l, ic]) => h('a', { href: '#/' + (k === 'home' ? '' : k), 'data-nav': k }, h('span', { html: ic.replace(/width="20" height="20"/, 'width="22" height="22"') }), l)));
 }
 function renderNav() {
-  const items = [['home', 'Home', I.home], ['me', 'Your music', I.headphones], ['search', 'Search', I.search], ['library', 'Library', I.library], ['import', 'Import', I.import], ['settings', 'Settings', I.settings]];
+  const items = [['home', 'Home', I.home], ['me', 'Your music', I.headphones], ['search', 'Search', I.search], ['mixes', 'Mixes', I.shuffle], ['library', 'Library', I.library], ['import', 'Import', I.import], ['settings', 'Settings', I.settings]];
   $('nav').replaceChildren(...items.map(([k, l, ic]) => h('a', { href: '#/' + (k === 'home' ? '' : k), 'data-nav': k, title: l }, h('span', { html: ic, style: { display: 'contents' } }), h('span', {}, l))));
 }
 function renderSide() {

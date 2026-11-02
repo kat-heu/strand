@@ -66,6 +66,7 @@ const MOCK_GIS = `window.google={accounts:{oauth2:{initTokenClient(c){ window.__
   const b = await chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required'] });
   const ctx = await b.newContext({ viewport: { width: 1440, height: 900 } });
   await ctx.addInitScript(() => { navigator.requestMediaKeySystemAccess = () => Promise.resolve({}); }); // pretend this browser has Widevine, like Chrome
+  await ctx.route(/api\.audius\.co|api\.jamendo\.com/, r => r.fulfill({ contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': '*' }, body: '{"data":[]}' })); // free catalogues: empty in this test
   const p = await ctx.newPage();
   const errs = [];
   p.on('pageerror', e => errs.push('PAGEERR ' + e.message));
@@ -99,7 +100,7 @@ const MOCK_GIS = `window.google={accounts:{oauth2:{initTokenClient(c){ window.__
   await p.route('https://fonts.googleapis.com/**', r => r.abort());
   // These tests cover the app itself, so run with Strand accounts switched off.
   const cfgNoAccounts = fs.readFileSync(path.join(__dirname, '..', 'public', 'config.js'), 'utf8').replace(/supabase(Url|Key): '[^']*'/g, "supabase$1: ''").replace(/youtubeKey: '[^']*'/, "youtubeKey: ''");
-  await ctx.route('**/config.js', r => r.fulfill({ contentType: 'text/javascript', body: cfgNoAccounts }));
+  await ctx.route(u => u.pathname === '/config.js', r => r.fulfill({ contentType: 'text/javascript', body: cfgNoAccounts }));
   await p.route('https://sdk.scdn.co/**', r => r.fulfill({ contentType: 'text/javascript', body: MOCK_SP_SDK }));
   await p.route('https://www.youtube.com/iframe_api', r => r.fulfill({ contentType: 'text/javascript', body: MOCK_YT }));
   await p.route('https://w.soundcloud.com/player/api.js', r => r.fulfill({ contentType: 'text/javascript', body: MOCK_SC }));
@@ -411,7 +412,7 @@ const MOCK_GIS = `window.google={accounts:{oauth2:{initTokenClient(c){ window.__
     if (url.includes('lrclib')) return r.fulfill({ json: {}, headers: { 'Access-Control-Allow-Origin': '*' } });
     return r.fulfill({ status: 404, body: '' });
   });
-  await mp.route('**/config.js', r => r.fulfill({ contentType: 'text/javascript', body: cfgNoAccounts }));
+  await mp.route(u => u.pathname === '/config.js', r => r.fulfill({ contentType: 'text/javascript', body: cfgNoAccounts }));
   await mp.goto(BASE + '#/album/500'); await sleep(1200);
   await mp.locator('.row').nth(1).tap(); await sleep(1500);
   const ms = await mp.evaluate(() => ({ idx: strand.player.state.index, prov: strand.player.state.provider }));

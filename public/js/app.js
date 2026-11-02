@@ -6,6 +6,7 @@ import { initLocal, addLocalFiles, removeLocal, localPlaylist, isLiveBlob, isLoc
 import { cloudMusicOn, showCloudCovers } from './cloudmusic.js';
 import { initItunes, itunesData, itunesPlaylist, syncItunesXml, syncFromComputer, forgetItunes, desktopItunes, ALL_ID } from './itunes.js';
 import { buildMixes, savedMix, smartShuffle } from './mixes.js';
+import { freeSearch, audiusTrending, jamendoOn } from './providers/freemusic.js';
 import { askText, askConfirm, showText } from './ui.js';
 import { I, SERVICES } from './icons.js';
 import { settings, setSetting, fromConfig, library, saveLibrary, isLiked, toggleLike, on, emit, clearCaches } from './store.js';
@@ -266,6 +267,13 @@ views.home = async v => {
     v.append(h('h2', {}, 'Your library', h('small', {}, h('a', { href: '#/library' }, 'See all'))));
     v.append(playlistGrid(6));
   }
+  // Free full songs (Audius) — filled in when ready
+  {
+    const head = h('h2', {}, 'Free music trending', h('small', {}, h('a', { href: '#/search' }, 'Search'))), box = h('div', {});
+    v.append(head, box);
+    audiusTrending(18).then(ts => { if (!ts.length) { head.remove(); box.remove(); return; } const g = h('div', { class: 'grid' }); ts.forEach((x, i) => g.append(trackCard(x, ts, i))); box.replaceChildren(g); })
+      .catch(() => { head.remove(); box.remove(); });
+  }
   v.append(h('h2', {}, 'Most played right now', h('small', {}, settings.country.toUpperCase())));
   const box = h('div', {}, loading()); v.append(box);
   try {
@@ -290,7 +298,7 @@ views.search = async (v, q = '') => {
   const chips = h('div', { class: 'chips' });
   const results = h('div', {});
   v.append(h('div', { class: 'searchbar' }, h('div', { class: 'wrap' }, h('span', { html: I.search }), input), chips), results);
-  const tabs = [['all', 'All'], ['songs', 'Songs'], ['albums', 'Albums'], ['artists', 'Artists'], ['youtube', 'YouTube']];
+  const tabs = [['all', 'All'], ['songs', 'Songs'], ['albums', 'Albums'], ['artists', 'Artists'], ['free', 'Free music'], ['youtube', 'YouTube']];
   function drawChips() {
     chips.replaceChildren(...tabs.map(([k, l]) => h('button', { class: 'chip' + (searchTab === k ? ' on' : ''), onClick: () => { searchTab = k; drawChips(); run(input.value); } }, l)));
   }
@@ -314,6 +322,14 @@ views.search = async (v, q = '') => {
         if (my !== token) return;
         return results.replaceChildren(h('h2', {}, 'YouTube'), trackRows(vids));
       }
+      if (searchTab === 'free') {
+        const free = await freeSearch(term, 30);
+        if (my !== token) return;
+        return results.replaceChildren(h('h2', {}, 'Free full songs', h('small', {}, jamendoOn() ? 'Audius · Jamendo' : 'Audius')),
+          h('p', { class: 'muted', style: { fontSize: '13px', marginTop: '-6px' } }, 'Independent artists who share their music for free. Plays in full inside Strand — keeps going with your phone locked.'),
+          free.length ? trackRows(free) : h('div', { class: 'empty' }, 'No free songs found for that.'));
+      }
+      const freeP = searchTab === 'all' ? freeSearch(term, 6).catch(() => []) : null;
       const r = await catalog.search(term);
       if (my !== token) return;
       const out = [];
@@ -334,6 +350,7 @@ views.search = async (v, q = '') => {
         out.push(h('h2', {}, 'Albums'), g);
       }
       results.replaceChildren(...out);
+      if (freeP) freeP.then(free => { if (my === token && free.length) results.append(h('h2', {}, 'Free full songs', h('small', {}, h('a', { href: 'javascript:void 0', onClick: () => { searchTab = 'free'; drawChips(); run(input.value); } }, 'More'))), trackRows(free.slice(0, 6), { compact: true })); });
     } catch (e) { if (my === token) results.replaceChildren(errorBox(e, () => run(input.value))); }
   }
   input.addEventListener('input', debounce(() => run(input.value), 550));

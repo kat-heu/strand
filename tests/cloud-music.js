@@ -24,7 +24,7 @@ const SB = 'https://sb.test';
   const J = (r, d, status = 200) => r.fulfill({ status, contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': '*' }, body: JSON.stringify(d) });
   const session = { access_token: 'tok', refresh_token: 'ref', expires_at: Date.now() + 3600e3, user: { id: UID, email: 'kat@example.com', user_metadata: { name: 'Kat' } } };
   const setup = async ctx => {
-    await ctx.route('**/config.js', r => r.fulfill({ contentType: 'text/javascript', body: cfg }));
+    await ctx.route(u => u.pathname === '/config.js', r => r.fulfill({ contentType: 'text/javascript', body: cfg }));
     await ctx.route(/itunes\.apple|rss\.apple|lrclib/, r => J(r, { results: [], feed: { results: [] } }));
     await ctx.route(/fonts\.g|deezer/, r => r.abort());
     await ctx.route(SB + '/**', async r => {

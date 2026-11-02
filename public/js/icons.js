@@ -46,6 +46,8 @@ export const SERVICES = {
   local: { label: 'My music', color: '#3ddc97' },
   cloud: { label: 'My music (cloud)', color: '#3ddc97' },
   server: { label: 'My server', color: '#7aa2ff' },
+  audius: { label: 'Audius', color: '#cc0fe0' },
+  jamendo: { label: 'Jamendo', color: '#f4b400' },
   itunes: { label: 'iTunes', color: '#fb5c74' },
   catalog: { label: 'Catalog', color: '#9aa0b4' },
 };

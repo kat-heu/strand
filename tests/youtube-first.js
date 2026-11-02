@@ -17,7 +17,7 @@ const SB = 'https://sb.test';
   const matches = new Map(); let searches = 0;
   const session = { access_token: 'tok', refresh_token: 'ref', expires_at: Date.now() + 3600e3, user: { id: 'u1', email: 'k@example.com', user_metadata: { name: 'Kat' } } };
   const setup = async ctx => {
-    await ctx.route('**/config.js', r => r.fulfill({ contentType: 'text/javascript', body: cfg }));
+    await ctx.route(u => u.pathname === '/config.js', r => r.fulfill({ contentType: 'text/javascript', body: cfg }));
     await ctx.route('https://www.youtube.com/iframe_api', r => r.fulfill({ contentType: 'text/javascript', body: MOCK_YT }));
     await ctx.route('https://www.googleapis.com/youtube/v3/search**', r => { searches++; J(r, { items: [{ id: { videoId: 'vid12345678' }, snippet: { title: 'Nova Lane - Glass Hours (Official Audio)', channelTitle: 'Nova Lane - Topic', thumbnails: {} } }] }); });
     await ctx.route(/itunes\.apple|rss\.apple|lrclib/, r => J(r, { results: [], feed: { results: [] } }));

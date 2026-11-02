@@ -12,6 +12,7 @@ import { createLocal, isLocalHere } from './local.js';
 import { createItunes } from './itunes.js';
 import { createCloud } from './cloudmusic.js';
 import { createSubsonic } from './providers/subsonic.js';
+import { createAudius, createJamendo } from './providers/freemusic.js';
 
 // ---- playback ownership -------------------------------------------------------------
 // Exactly one source owns playback at a time (state.provider). Each source gets its
@@ -67,7 +68,7 @@ function ctxFor(name) {
 //   true      — Strand's own audio (your files, cloud music, previews)
 //   'external'— another app plays it (Spotify app)
 //   false     — stops (YouTube's rules; SoundCloud's and Apple's players are inside a web page)
-export const BACKGROUND = { local: true, cloud: true, preview: true, itunes: true, server: true, spotifyRemote: 'external', youtube: false, soundcloud: false, spotify: false, apple: false };
+export const BACKGROUND = { local: true, cloud: true, preview: true, itunes: true, server: true, audius: true, jamendo: true, spotifyRemote: 'external', youtube: false, soundcloud: false, spotify: false, apple: false };
 
 export const providers = {
   spotify: createSpotify(ctxFor('spotify')),
@@ -80,6 +81,8 @@ export const providers = {
   itunes: createItunes(ctxFor('itunes')),
   cloud: createCloud(ctxFor('cloud')),
   server: createSubsonic(ctxFor('server')),
+  audius: createAudius(ctxFor('audius')),
+  jamendo: createJamendo(ctxFor('jamendo')),
 };
 
 export const state = {
@@ -107,10 +110,12 @@ export function sourceOrder(t) {
   // Phones: Spotify's in-page player can't run there. "Play in Spotify app" puts the
   // remote first; otherwise Spotify songs play inside Strand via YouTube when possible.
   // Songs that can be on Spotify (not SoundCloud uploads, YouTube videos or your own files)
-  const fromSpotify = !!t.ids?.spotify || !['soundcloud', 'youtube', 'local', 'cloud', 'server'].includes(t.origin);
+  const fromSpotify = !!t.ids?.spotify || !['soundcloud', 'youtube', 'local', 'cloud', 'server', 'audius', 'jamendo'].includes(t.origin);
   if (settings.phoneSpotify2 === 'app' && fromSpotify) list.unshift('spotifyRemote');
   // Your own music server: its songs first; other songs try it too (if you own them,
   // they play from your server instead of a streaming service).
+  if (t.ids?.jamendo) list.unshift('jamendo');               // free catalogues: their own full stream
+  if (t.ids?.audius) list.unshift('audius');
   if (t.ids?.server) list.unshift('server');
   else if (providers.server.available() && fromSpotify) list.splice(Math.max(0, list.indexOf('youtube')), 0, 'server');
   if (providers.itunes.canPlay(t)) list.unshift('itunes');    // iTunes song on this computer: play the file

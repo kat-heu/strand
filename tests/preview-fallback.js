@@ -11,7 +11,7 @@ function wav(sec = 2, rate = 8000) {
   const b = await chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required'] });
   const ctx = await b.newContext({ ...devices['iPhone 13'] });
   const cfg = fs.readFileSync(require('path').join(__dirname, '..', 'public', 'config.js'), 'utf8').replace(/supabase(Url|Key): '[^']*'/g, "supabase$1: ''").replace(/youtubeKey: '[^']*'/, "youtubeKey: ''");
-  await ctx.route('**/config.js', r => r.fulfill({ contentType: 'text/javascript', body: cfg }));
+  await ctx.route(u => u.pathname === '/config.js', r => r.fulfill({ contentType: 'text/javascript', body: cfg }));
   await ctx.route('https://itunes.apple.com/**', r => r.fulfill({ status: 403, body: 'rate limited' }));
   await ctx.route(/fonts\.g|lrclib|rss\./, r => r.abort());
   await ctx.route('https://api.deezer.com/**', r => { const cb = new URL(r.request().url()).searchParams.get('callback'); r.fulfill({ contentType: 'text/javascript', body: `${cb}(${JSON.stringify({ data: [{ title: 'Better', duration: 210, preview: 'https://audio.test/dz.wav', artist: { name: 'Khalid' }, album: { cover_xl: '' } }] })})` }); });

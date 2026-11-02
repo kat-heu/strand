@@ -30,7 +30,7 @@ function id3mp3() {
   const b = await chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required'] });
   const ctx = await b.newContext({ viewport: { width: 1300, height: 850 } });
   const cfg = fs.readFileSync(path.join(__dirname, '..', 'public', 'config.js'), 'utf8').replace(/supabase(Url|Key): '[^']*'/g, "supabase$1: ''").replace(/youtubeKey: '[^']*'/, "youtubeKey: ''");
-  await ctx.route('**/config.js', r => r.fulfill({ contentType: 'text/javascript', body: cfg }));
+  await ctx.route(u => u.pathname === '/config.js', r => r.fulfill({ contentType: 'text/javascript', body: cfg }));
   await ctx.route(/itunes\.apple|rss\.apple|lrclib/, r => r.fulfill({ contentType: 'application/json', body: '{"results":[]}' }));
   await ctx.route(/fonts\.g|deezer/, r => r.abort());
   const p = await ctx.newPage(); const errs = []; p.on('pageerror', e => errs.push(e.message));
@@ -67,7 +67,7 @@ function id3mp3() {
   await p.locator('.dialog button', { hasText: 'Remove' }).click(); await sleep(800);
   check('Remove deletes it', await p.evaluate(() => strand.library.playlists.find(x => x.id === 'local').tracks.length) === 1);
   // another device (no file here): the song is listed but plays from elsewhere, no broken cover
-  const c2 = await b.newContext(); await c2.route('**/config.js', r => r.fulfill({ contentType: 'text/javascript', body: cfg }));
+  const c2 = await b.newContext(); await c2.route(u => u.pathname === '/config.js', r => r.fulfill({ contentType: 'text/javascript', body: cfg }));
   await c2.route(/fonts\.g|lrclib|deezer/, r => r.abort());
   await c2.route(/itunes\.apple\.com/, r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ results: [{ wrapperType: 'track', trackId: 1, trackName: 'Glass Hours', artistName: 'Nova Lane', collectionName: 'X', artworkUrl100: '', trackTimeMillis: 3000, previewUrl: 'https://audio.test/p.wav' }] }) }));
   await c2.route('https://audio.test/**', r => r.fulfill({ contentType: 'audio/wav', body: wav() }));

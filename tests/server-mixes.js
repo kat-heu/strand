@@ -15,7 +15,7 @@ const SRV = 'https://music.example.test';
   const b = await chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required'] });
   const ctx = await b.newContext({ viewport: { width: 1300, height: 850 } });
   const cfg = fs.readFileSync(path.join(__dirname, '..', 'public', 'config.js'), 'utf8').replace(/supabase(Url|Key): '[^']*'/g, "supabase$1: ''").replace(/youtubeKey: '[^']*'/, "youtubeKey: ''");
-  await ctx.route('**/config.js', r => r.fulfill({ contentType: 'text/javascript', body: cfg }));
+  await ctx.route(u => u.pathname === '/config.js', r => r.fulfill({ contentType: 'text/javascript', body: cfg }));
   await ctx.route(/itunes\.apple|rss\.apple|lrclib/, r => r.fulfill({ contentType: 'application/json', body: '{"results":[]}' }));
   await ctx.route(/fonts\.g/, r => r.abort());
   // Deezer: related artists + top tracks (JSONP)

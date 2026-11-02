@@ -14,6 +14,8 @@ export default {
 
   // Optional YouTube Data API key — lets people who haven't signed in with Google
   // still play songs via YouTube. Restrict it to your domain in Google Cloud.
+  // Free Jamendo developer ID (devportal.jamendo.com, no card) to add Jamendo's free-licensed music. Optional.
+  jamendoClientId: '',
   youtubeKey: 'AIzaSyCkhgB0z1_9_-YiZ68qb2TQ1f91Tff-bQk',   // restricted to Strand's web addresses + YouTube Data API only
 
   // Strand accounts (Supabase). Project URL + publishable ("anon") key — both public.
